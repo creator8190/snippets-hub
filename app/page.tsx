@@ -1,65 +1,122 @@
-import Image from "next/image";
+"use client";
+import React, { useState, useEffect } from 'react';
 
-export default function Home() {
+export default function SnippetsApp() {
+  const [user, setUser] = useState({ name: "Writer_User", credits: 12, isStudent: true, hasAcceptedToS: false });
+  const [view, setView] = useState('feed'); 
+
+  // Protection: Disable Right-Click
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+    document.addEventListener('contextmenu', handleContextMenu);
+    return () => document.removeEventListener('contextmenu', handleContextMenu);
+  }, []);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="min-h-screen bg-[#FCFAF7] text-slate-900 font-sans selection:bg-transparent">
+      
+      {/* TOOS MODAL */}
+      {!user.hasAcceptedToS && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center z-50 p-6">
+          <div className="bg-white p-8 rounded-2xl max-w-md shadow-2xl border border-slate-200">
+            <h2 className="text-3xl font-serif font-bold mb-4">Terms of Access</h2>
+            <p className="text-slate-600 mb-6 leading-relaxed">
+              By entering the Snippets Hub, you agree that all manuscripts are the <span className="font-bold text-black underline">exclusive property of the author</span>. Plagiarism or unauthorized screen-recording is a legal violation.
+            </p>
+            <button 
+              onClick={() => setUser({...user, hasAcceptedToS: true})}
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-orange-200"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              I Agree & Enter Hub
+            </button>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      )}
+
+      {/* MODERN NAVIGATION */}
+      <nav className="sticky top-0 bg-white/80 backdrop-blur-md border-b border-slate-200 z-40 px-6 py-4">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
+              <span className="text-white font-black text-xs italic">S</span>
+            </div>
+            <h1 className="text-xl font-serif font-bold tracking-tight">SNIPPETS</h1>
+          </div>
+          <div className="flex gap-8 text-sm font-semibold text-slate-500">
+            <button onClick={() => setView('feed')} className={view === 'feed' ? "text-orange-600" : "hover:text-black"}>Library</button>
+            <button onClick={() => setView('marketplace')} className={view === 'marketplace' ? "text-orange-600" : "hover:text-black"}>Shop</button>
+            <button onClick={() => setView('profile')} className={view === 'profile' ? "text-orange-600" : "hover:text-black"}>Account</button>
+          </div>
         </div>
+      </nav>
+
+      <main className="max-w-4xl mx-auto pt-16 pb-24 px-6">
+        {view === 'feed' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="mb-12">
+              <h2 className="text-5xl font-serif font-medium mb-2 tracking-tight">The Feed</h2>
+              <p className="text-slate-500 text-lg">Critique the latest 500-word excerpts from the community.</p>
+            </div>
+
+            {/* SNIPPET CARD */}
+            <div className="bg-white border border-slate-200 p-10 rounded-3xl shadow-sm relative overflow-hidden group">
+              <div className="flex justify-between items-center mb-6">
+                <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">Script Draft</span>
+                <span className="text-slate-400 text-xs font-mono italic">#29481</span>
+              </div>
+              
+              <p className="text-2xl font-serif leading-[1.8] text-slate-800 italic select-none">
+                "The rain didn't just fall in Sector 4; it hammered against the glass like a thousand skeletal fingers demanding entry. Kaelen watched the steam rise from his synthetic tea, wondering if the sky remembered being blue."
+              </p>
+
+              <div className="mt-10 pt-6 border-t border-slate-50 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-slate-200 rounded-full"></div>
+                  <div>
+                    <p className="text-sm font-bold">A. Vance</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Sci-Fi Writer</p>
+                  </div>
+                </div>
+                <button className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:scale-105 transition-transform active:scale-95">
+                  Suggest Edit
+                </button>
+              </div>
+
+              {/* ANTI-THEFT WATERMARK */}
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.04] rotate-[-15deg]">
+                <span className="text-8xl font-black select-none uppercase tracking-tighter text-slate-900">
+                  {user.name} viewing
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {view === 'profile' && (
+          <div className="bg-white border border-slate-200 p-12 rounded-3xl shadow-xl animate-in zoom-in-95 duration-500">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-24 h-24 bg-gradient-to-br from-orange-400 to-red-500 rounded-full mb-6 shadow-inner border-4 border-white"></div>
+              <h2 className="text-4xl font-serif font-bold">{user.name}</h2>
+              <p className="text-orange-600 font-black uppercase tracking-widest text-xs mt-2">Verified Student Editor</p>
+              
+              <div className="grid grid-cols-2 gap-6 w-full mt-10">
+                <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Earned Credits</p>
+                  <p className="text-4xl font-serif font-bold mt-2">{user.credits}</p>
+                </div>
+                <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Level</p>
+                  <p className="text-4xl font-serif font-bold mt-2">Expert</p>
+                </div>
+              </div>
+
+              <button className="mt-8 w-full bg-white border-2 border-slate-900 py-4 rounded-xl font-bold hover:bg-slate-900 hover:text-white transition-colors flex items-center justify-center gap-2">
+                <span>Export for College Credit</span>
+              </button>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
-}
+} 

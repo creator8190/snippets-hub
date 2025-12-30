@@ -1,4 +1,3 @@
-// Version 2.0 - Forced Update Dec 30
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -30,7 +29,6 @@ export default function SnippetsHub() {
     if (data) setSnippets(data);
   }
 
-  // --- LOGIC: TEXT CAPTURE (SNIP) ---
   const handleCapture = async () => {
     if (!user) { setShowAuth(true); return; }
     const textarea = textareaRef.current;
@@ -47,7 +45,6 @@ export default function SnippetsHub() {
     }
   };
 
-  // --- LOGIC: AI POLISH ---
   const handleAiPolish = async () => {
     if (!content) return;
     setIsAiLoading(true);
@@ -61,12 +58,11 @@ export default function SnippetsHub() {
   return (
     <div className="flex min-h-screen bg-[#f4f1ea] text-[#1a1a1a] font-sans">
       <aside className="w-20 bg-white border-r border-slate-200 flex flex-col items-center py-8 gap-10 sticky top-0 h-screen z-50">
-        <div className="text-2xl font-serif font-black text-red-700 cursor-pointer" onClick={() => setView('landing')}>S.</div>
+        <div className="text-2xl font-serif font-black text-red-700 cursor-pointer hover:scale-110 transition" onClick={() => setView('landing')}>S.</div>
         <nav className="flex flex-col gap-8 flex-1 text-xl text-slate-400">
-          <button onClick={() => setView('hub')} className={view === 'hub' ? 'text-slate-900' : 'hover:text-red-600'}>🏛️</button>
+          <button onClick={() => setView('landing')} className={view === 'landing' ? 'text-red-600' : 'hover:text-red-600'}>🏛️</button>
           <button onClick={() => setView('write')} className={view === 'write' ? 'text-red-600' : 'hover:text-red-600'}>✍️</button>
           <button onClick={() => setView('profile')} className={view === 'profile' ? 'text-slate-900' : 'hover:text-red-600'}>👤</button>
-          <button onClick={() => setView('shop')} className={view === 'shop' ? 'text-slate-900' : 'hover:text-red-600'}>🛍️</button>
         </nav>
       </aside>
 
@@ -76,8 +72,8 @@ export default function SnippetsHub() {
             <h1 className="text-8xl font-serif font-bold tracking-tighter leading-tight">Write. Protect. <span className="text-red-600 underline">Earn.</span></h1>
             <p className="text-xl text-slate-500 max-w-2xl mx-auto">The world's first encrypted ecosystem where authors secure intellectual property.</p>
             <div className="flex justify-center gap-4">
-              <button onClick={() => setShowAuth(true)} className="px-10 py-4 bg-black text-white rounded-full font-bold">Join the Hub — Free</button>
-              <button className="px-10 py-4 border border-slate-300 rounded-full font-bold">Preview Gallery</button>
+              <button onClick={() => setView('write')} className="px-10 py-4 bg-black text-white rounded-full font-bold">Open Drafting Room</button>
+              <button onClick={() => setShowAuth(true)} className="px-10 py-4 border border-slate-300 rounded-full font-bold">Secure Login</button>
             </div>
           </div>
         )}
@@ -113,7 +109,7 @@ export default function SnippetsHub() {
               <div className="grid grid-cols-3 gap-8 border-t pt-10">
                 <div><div className="text-2xl font-bold">12</div><div className="text-[10px] uppercase text-slate-400 font-bold">Reviews Left</div></div>
                 <div><div className="text-2xl font-bold">4.9</div><div className="text-[10px] uppercase text-slate-400 font-bold">Editor Rating</div></div>
-                <div><div className="text-2xl font-bold">150</div><div className="text-[10px] uppercase text-slate-400 font-black">Trust Points</div></div>
+                <div><div className="text-2xl font-bold">{snippets.length * 10 + 150}</div><div className="text-[10px] uppercase text-slate-400 font-black">Trust Points</div></div>
               </div>
             </div>
           </div>

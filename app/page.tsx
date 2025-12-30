@@ -47,7 +47,13 @@ export default function SnippetsApp() {
         .from('snippets')
         .insert([{ content: selectedText, user_id: user.id }])
         .select();
-      if (!error && data) setSnippets([data[0], ...snippets]);
+      if (!error && data) {
+        setSnippets([data[0], ...snippets]);
+        alert("Captured!");
+      } else if (error) {
+        console.error(error);
+        alert("Error: " + error.message);
+      }
     }
   };
 
@@ -70,7 +76,7 @@ export default function SnippetsApp() {
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
-      {/* SIDEBAR ARCHITECTURE */}
+      {/* SIDEBAR - Preserving your original architecture */}
       <aside className="w-24 bg-white border-r border-slate-100 flex flex-col items-center py-10 gap-10 sticky top-0 h-screen z-50">
         <div className="text-3xl font-serif font-black text-orange-600 underline">S.</div>
         <div className="flex flex-col gap-8 flex-1 text-2xl text-slate-300">
@@ -82,15 +88,14 @@ export default function SnippetsApp() {
         <button className="text-slate-400 hover:text-red-500 font-bold text-xs uppercase tracking-tighter">Exit</button>
       </aside>
 
-      {/* WORKSPACE AREA */}
       <main className="flex-1 p-8 md:p-12 lg:p-20 flex flex-col gap-8">
         <header className="flex justify-between items-center">
           <div>
             <h1 className="text-4xl font-serif font-black text-slate-900 leading-tight">Workspace</h1>
-            <p className="text-slate-500 text-sm italic">Capture snippets & polish with AI</p>
+            <p className="text-slate-500 text-sm">Select text to ✂️ Capture or use ✨ AI Polish</p>
           </div>
           {!user && (
-            <button onClick={() => setShowSignup(true)} className="px-6 py-2 bg-orange-600 text-white font-bold rounded-xl shadow-lg shadow-orange-200">
+            <button onClick={() => setShowSignup(true)} className="px-6 py-2 bg-orange-600 text-white font-bold rounded-xl shadow-lg">
               Join for Free
             </button>
           )}
@@ -103,13 +108,13 @@ export default function SnippetsApp() {
                 ✂️ Capture Selection
               </button>
               <button onClick={handleAiPolish} className="text-xs font-bold bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition">
-                {isAiLoading ? "AI is Analyzing..." : "✨ AI Polish"}
+                {isAiLoading ? "AI analyzing..." : "✨ AI Polish"}
               </button>
             </div>
             <textarea 
               ref={textareaRef}
-              className="flex-1 w-full text-lg text-slate-700 outline-none resize-none font-medium leading-relaxed mt-4"
-              placeholder="Start your writing or code here..."
+              className="flex-1 w-full text-lg text-slate-700 outline-none resize-none font-medium mt-4"
+              placeholder="Start writing... highlight text to capture it."
               value={content}
               onChange={(e) => setContent(e.target.value)}
             />
@@ -117,10 +122,10 @@ export default function SnippetsApp() {
 
           <div className="space-y-6">
             <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
-              <h3 className="font-bold text-slate-900 mb-4">📋 Snippet Library ({snippets.length})</h3>
-              <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+              <h3 className="font-bold text-slate-900 mb-4 tracking-tight">📋 Snippet Library ({snippets.length})</h3>
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
                 {snippets.length === 0 ? (
-                  <p className="text-xs text-slate-400">Empty library.</p>
+                  <p className="text-xs text-slate-400 italic">No snippets captured yet.</p>
                 ) : (
                   snippets.map((snip) => (
                     <div key={snip.id} className="p-4 bg-slate-50 rounded-2xl text-xs text-slate-600 border border-slate-100">
@@ -138,7 +143,7 @@ export default function SnippetsApp() {
             <div className="bg-white w-full max-w-md p-10 rounded-3xl shadow-2xl relative">
               <button onClick={() => setShowSignup(false)} className="absolute top-6 right-6">✕</button>
               <h2 className="text-3xl font-serif font-black text-slate-900 mb-6 text-center">Join Hub</h2>
-              <button className="w-full py-4 bg-orange-600 text-white font-black rounded-xl hover:bg-orange-700">Get Started</button>
+              <button className="w-full py-4 bg-orange-600 text-white font-black rounded-xl hover:bg-orange-700 transition">Get Started</button>
             </div>
           </div>
         )}

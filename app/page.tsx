@@ -22,40 +22,54 @@ export default function SnippetsHub() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
-      if (session?.user) fetchSnippets(session.user.id);
+      if (session?.user) {
+        fetchSnippets(session.user.id);
+      }
     });
   }, []);
 
   async function fetchSnippets(userId: string) {
     const { data } = await supabase.from('snippets').select('*').order('created_at', { ascending: false });
-    if (data) setSnippets(data);
+    if (data) {
+      setSnippets(data);
+    }
   }
 
   const handleLogin = async () => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) {
-      alert(error.message);
-    } else {
-      setUser(data.user);
-      setShowAuth(false);
-      fetchSnippets(data.user.id);
-      setView('hub');
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { 
+      alert(error.message); 
+    } else { 
+      setUser(data.user); 
+      setShowAuth(false); 
+      fetchSnippets(data.user.id); 
+      setView('hub'); 
     }
   };
 
-  const handleCapture = async () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setView('landing');
+  };
+
+  const saveToDatabase = async (textToSave: string) => {
+    if (!textToSave.trim()) return;
+    const { data, error } = await supabase.from('snippets').insert([{ content: textToSave, user_id: user?.id }]).select();
+    if (error) { 
+      alert("Save failed: " + error.message); 
+    } else if (data) { 
+      setSnippets([data[0], ...snippets]); 
+      alert("Snippet secured in Hub."); 
+    }
+  };
+
+  const handleCapture = () => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     const selectedText = content.substring(textarea.selectionStart, textarea.selectionEnd);
-    if (selectedText.trim().length > 0) {
-      const { data } = await supabase.from('snippets').insert([{ content: selectedText, user_id: user?.id }]).select();
-      if (data) {
-        setSnippets([data[0], ...snippets]);
-        alert("Snippet secured in Hub.");
-      }
+    if (selectedText) {
+      saveToDatabase(selectedText);
     } else {
       alert("Highlight text first to 'Snip' it!");
     }
@@ -68,13 +82,17 @@ export default function SnippetsHub() {
       const res = await fetch('/api/ai', { method: 'POST', body: JSON.stringify({ text: content }) });
       const data = await res.json();
       setContent(prev => prev + "\n\n" + data.suggestion);
-    } catch (err) { console.error(err); } finally { setIsAiLoading(false); }
+    } catch (err) { 
+      console.error(err); 
+    } finally { 
+      setIsAiLoading(false); 
+    }
   };
 
   return (
     <div className="flex min-h-screen bg-[#f4f1ea] text-[#1a1a1a] font-sans">
       <aside className="w-20 bg-white border-r border-slate-200 flex flex-col items-center py-8 gap-10 sticky top-0 h-screen z-50">
-        <div className="text-2xl font-serif font-black text-red-700 cursor-pointer hover:scale-110 transition" onClick={() => setView('landing')}>S.</div>
+        <div className="text-2xl font-serif font-black text-red-700 cursor-pointer" onClick={() => setView('landing')}>S.</div>
         <nav className="flex flex-col gap-8 flex-1 text-xl text-slate-400">
           <button onClick={() => setView('hub')} className={view === 'hub' ? 'text-red-600' : 'hover:text-red-600'}>🏛️</button>
           <button onClick={() => setView('write')} className={view === 'write' ? 'text-red-600' : 'hover:text-red-600'}>✍️</button>
@@ -85,11 +103,10 @@ export default function SnippetsHub() {
       <main className="flex-1 p-12">
         {view === 'landing' && (
           <div className="max-w-4xl mx-auto text-center py-20 space-y-8">
-            <h1 className="text-8xl font-serif font-bold tracking-tighter leading-tight">Write. Protect. <span className="text-red-600 underline">Earn.</span></h1>
-            <p className="text-xl text-slate-500 max-w-2xl mx-auto">The world's first encrypted ecosystem where authors secure intellectual property.</p>
+            <h1 className="text-8xl font-serif font-bold tracking-tighter">Write. Protect. <span className="text-red-600 underline">Earn.</span></h1>
             <div className="flex justify-center gap-4">
-              <button onClick={() => setView('write')} className="px-10 py-4 bg-black text-white rounded-full font-bold">Open Drafting Room</button>
-              <button onClick={() => setShowAuth(true)} className="px-10 py-4 border border-slate-300 rounded-full font-bold">Secure Login</button>
+              <button onClick={() => setView('write')} className="px-10 py-4 bg-black text-white rounded-full font-bold">Draft Room</button>
+              {!user && <button onClick={() => setShowAuth(true)} className="px-10 py-4 border border-slate-300 rounded-full font-bold">Login</button>}
             </div>
           </div>
         )}
@@ -98,10 +115,10 @@ export default function SnippetsHub() {
           <div className="max-w-4xl mx-auto space-y-6">
             <h2 className="text-3xl font-serif font-bold italic">Secured Snippets Hub</h2>
             <div className="grid gap-4">
-              {snippets.length === 0 ? <p className="text-slate-400">No snippets secured yet.</p> : snippets.map((s, i) => (
+              {snippets.map((s, i) => (
                 <div key={i} className="p-6 bg-white rounded-2xl shadow-sm border border-slate-100">
                   <p className="text-slate-600 italic">"{s.content}"</p>
-                  <div className="mt-4 text-[10px] uppercase font-bold text-red-600 tracking-widest">Property of Author</div>
+                  <div className="mt-4 text-[10px] uppercase font-bold text-red-600 tracking-widest">Property of {user?.email}</div>
                 </div>
               ))}
             </div>
@@ -110,13 +127,13 @@ export default function SnippetsHub() {
 
         {view === 'write' && (
           <div className="max-w-4xl mx-auto space-y-6">
-            <h2 className="text-3xl font-serif font-bold italic text-center">Private Drafting Room</h2>
+            <h2 className="text-3xl font-serif font-bold italic text-center">Drafting Room</h2>
             <div className="bg-white/80 backdrop-blur shadow-2xl rounded-[40px] p-12 min-h-[500px] relative border border-white">
-              <textarea ref={textareaRef} value={content} onChange={(e) => setContent(e.target.value)} placeholder="Begin your legacy..." className="w-full h-[350px] bg-transparent outline-none text-xl leading-relaxed resize-none" />
+              <textarea ref={textareaRef} value={content} onChange={(e) => setContent(e.target.value)} placeholder="Write here..." className="w-full h-[350px] bg-transparent outline-none text-xl leading-relaxed resize-none" />
               <div className="absolute bottom-10 right-10 flex gap-4">
-                 <button onClick={handleAiPolish} className="px-6 py-2 bg-purple-50 text-purple-600 rounded-full text-xs font-bold hover:bg-purple-100 transition">{isAiLoading ? 'AI Analyzing...' : '✨ AI Polish'}</button>
-                 <button onClick={handleCapture} className="px-6 py-2 bg-slate-100 rounded-full text-xs font-bold hover:bg-orange-100 transition">✂️ Snip Selection</button>
-                 <button className="px-8 py-3 bg-red-600 text-white rounded-full font-bold shadow-lg shadow-red-200">Publish Snippet</button>
+                 <button onClick={handleAiPolish} className="px-6 py-2 bg-purple-50 text-purple-600 rounded-full text-xs font-bold">{isAiLoading ? '...' : '✨ AI Polish'}</button>
+                 <button onClick={handleCapture} className="px-6 py-2 bg-slate-100 rounded-full text-xs font-bold">✂️ Snip</button>
+                 <button onClick={() => saveToDatabase(content)} className="px-8 py-3 bg-red-600 text-white rounded-full font-bold shadow-lg">Publish All</button>
               </div>
             </div>
           </div>
@@ -127,12 +144,23 @@ export default function SnippetsHub() {
             <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 p-16 text-center relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-2 bg-red-600" />
               <div className="w-24 h-24 bg-slate-50 rounded-full mx-auto mb-6 flex items-center justify-center text-3xl">👤</div>
-              <h2 className="uppercase tracking-[0.2em] text-[10px] font-black text-red-600 mb-10">Elite Student Editor</h2>
+              <h2 className="uppercase tracking-[0.2em] text-[10px] font-black text-red-600 mb-6">Elite Student Editor</h2>
+              <p className="mb-10 text-slate-500">{user?.email}</p>
               <div className="grid grid-cols-3 gap-8 border-t pt-10">
-                <div><div className="text-2xl font-bold">12</div><div className="text-[10px] uppercase text-slate-400 font-bold">Reviews Left</div></div>
-                <div><div className="text-2xl font-bold">4.9</div><div className="text-[10px] uppercase text-slate-400 font-bold">Editor Rating</div></div>
-                <div><div className="text-2xl font-bold">{snippets.length + 150}</div><div className="text-[10px] uppercase text-slate-400 font-black">Trust Points</div></div>
+                <div>
+                  <div className="text-2xl font-bold">12</div>
+                  <div className="text-[10px] uppercase text-slate-400 font-bold">Reviews Left</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">4.9</div>
+                  <div className="text-[10px] uppercase text-slate-400 font-bold">Editor Rating</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">{snippets.length + 150}</div>
+                  <div className="text-[10px] uppercase text-slate-400 font-black">Trust Points</div>
+                </div>
               </div>
+              <button onClick={handleLogout} className="mt-12 text-red-600 font-bold text-xs uppercase tracking-widest hover:underline">Sign Out</button>
             </div>
           </div>
         )}
@@ -140,13 +168,11 @@ export default function SnippetsHub() {
         {showAuth && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-md">
             <div className="bg-white p-12 rounded-[40px] shadow-2xl w-full max-w-md text-center">
-              <h2 className="text-3xl font-serif font-bold mb-4 text-slate-900">Secure Access</h2>
-              <div className="space-y-4 mb-6">
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="w-full p-4 bg-slate-50 border rounded-2xl" />
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="w-full p-4 bg-slate-50 border rounded-2xl" />
-              </div>
-              <button onClick={handleLogin} className="w-full py-4 bg-red-600 text-white rounded-2xl font-bold">Enter the Hub</button>
-              <button onClick={() => setShowAuth(false)} className="mt-4 text-slate-400 text-sm font-bold">Maybe Later</button>
+              <h2 className="text-3xl font-serif font-bold mb-4">Secure Access</h2>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="w-full p-4 mb-4 bg-slate-50 border rounded-2xl" />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="w-full p-4 mb-6 bg-slate-50 border rounded-2xl" />
+              <button onClick={handleLogin} className="w-full py-4 bg-red-600 text-white rounded-2xl font-bold">Enter Hub</button>
+              <button onClick={() => setShowAuth(false)} className="mt-4 text-slate-400 text-sm">Cancel</button>
             </div>
           </div>
         )}

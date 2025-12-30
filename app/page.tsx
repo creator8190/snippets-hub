@@ -29,6 +29,7 @@ export default function SnippetsHub() {
     if (data) setSnippets(data);
   }
 
+  // --- LOGIC: TEXT CAPTURE (SNIP) ---
   const handleCapture = async () => {
     if (!user) { setShowAuth(true); return; }
     const textarea = textareaRef.current;
@@ -45,6 +46,7 @@ export default function SnippetsHub() {
     }
   };
 
+  // --- LOGIC: AI POLISH ---
   const handleAiPolish = async () => {
     if (!content) return;
     setIsAiLoading(true);

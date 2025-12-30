@@ -25,20 +25,19 @@ export default function SnippetsHub() {
   }, []);
 
   async function fetchSnippets(userId: string) {
-    const { data } = await supabase.from('snippets').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+    const { data } = await supabase.from('snippets').select('*').order('created_at', { ascending: false });
     if (data) setSnippets(data);
   }
 
   const handleCapture = async () => {
-    if (!user) { setShowAuth(true); return; }
     const textarea = textareaRef.current;
     if (!textarea) return;
     const selectedText = content.substring(textarea.selectionStart, textarea.selectionEnd);
     if (selectedText.trim().length > 0) {
-      const { data } = await supabase.from('snippets').insert([{ content: selectedText, user_id: user.id }]).select();
+      const { data } = await supabase.from('snippets').insert([{ content: selectedText, user_id: user?.id }]).select();
       if (data) {
         setSnippets([data[0], ...snippets]);
-        alert("Snippet secured.");
+        alert("Snippet secured in Hub.");
       }
     } else {
       alert("Highlight text first to 'Snip' it!");
@@ -60,7 +59,7 @@ export default function SnippetsHub() {
       <aside className="w-20 bg-white border-r border-slate-200 flex flex-col items-center py-8 gap-10 sticky top-0 h-screen z-50">
         <div className="text-2xl font-serif font-black text-red-700 cursor-pointer hover:scale-110 transition" onClick={() => setView('landing')}>S.</div>
         <nav className="flex flex-col gap-8 flex-1 text-xl text-slate-400">
-          <button onClick={() => setView('landing')} className={view === 'landing' ? 'text-red-600' : 'hover:text-red-600'}>🏛️</button>
+          <button onClick={() => setView('hub')} className={view === 'hub' ? 'text-red-600' : 'hover:text-red-600'}>🏛️</button>
           <button onClick={() => setView('write')} className={view === 'write' ? 'text-red-600' : 'hover:text-red-600'}>✍️</button>
           <button onClick={() => setView('profile')} className={view === 'profile' ? 'text-slate-900' : 'hover:text-red-600'}>👤</button>
         </nav>
@@ -74,6 +73,20 @@ export default function SnippetsHub() {
             <div className="flex justify-center gap-4">
               <button onClick={() => setView('write')} className="px-10 py-4 bg-black text-white rounded-full font-bold">Open Drafting Room</button>
               <button onClick={() => setShowAuth(true)} className="px-10 py-4 border border-slate-300 rounded-full font-bold">Secure Login</button>
+            </div>
+          </div>
+        )}
+
+        {view === 'hub' && (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <h2 className="text-3xl font-serif font-bold italic">Secured Snippets Hub</h2>
+            <div className="grid gap-4">
+              {snippets.length === 0 ? <p className="text-slate-400">No snippets secured yet.</p> : snippets.map((s, i) => (
+                <div key={i} className="p-6 bg-white rounded-2xl shadow-sm border border-slate-100">
+                  <p className="text-slate-600 italic">"{s.content}"</p>
+                  <div className="mt-4 text-[10px] uppercase font-bold text-red-600 tracking-widest">Property of Author</div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -109,7 +122,7 @@ export default function SnippetsHub() {
               <div className="grid grid-cols-3 gap-8 border-t pt-10">
                 <div><div className="text-2xl font-bold">12</div><div className="text-[10px] uppercase text-slate-400 font-bold">Reviews Left</div></div>
                 <div><div className="text-2xl font-bold">4.9</div><div className="text-[10px] uppercase text-slate-400 font-bold">Editor Rating</div></div>
-                <div><div className="text-2xl font-bold">{snippets.length * 10 + 150}</div><div className="text-[10px] uppercase text-slate-400 font-black">Trust Points</div></div>
+                <div><div className="text-2xl font-bold">{snippets.length + 150}</div><div className="text-[10px] uppercase text-slate-400 font-black">Trust Points</div></div>
               </div>
             </div>
           </div>

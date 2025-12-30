@@ -1,3 +1,4 @@
+// Version 2.0 - Forced Update Dec 30
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -29,18 +30,24 @@ export default function SnippetsHub() {
     if (data) setSnippets(data);
   }
 
+  // --- LOGIC: TEXT CAPTURE (SNIP) ---
   const handleCapture = async () => {
+    if (!user) { setShowAuth(true); return; }
     const textarea = textareaRef.current;
     if (!textarea) return;
     const selectedText = content.substring(textarea.selectionStart, textarea.selectionEnd);
     if (selectedText.trim().length > 0) {
-      const { data } = await supabase.from('snippets').insert([{ content: selectedText, user_id: user?.id }]).select();
-      if (data) { setSnippets([data[0], ...snippets]); alert("Snippet secured."); }
+      const { data } = await supabase.from('snippets').insert([{ content: selectedText, user_id: user.id }]).select();
+      if (data) {
+        setSnippets([data[0], ...snippets]);
+        alert("Snippet secured.");
+      }
     } else {
       alert("Highlight text first to 'Snip' it!");
     }
   };
 
+  // --- LOGIC: AI POLISH ---
   const handleAiPolish = async () => {
     if (!content) return;
     setIsAiLoading(true);
@@ -59,6 +66,7 @@ export default function SnippetsHub() {
           <button onClick={() => setView('hub')} className={view === 'hub' ? 'text-slate-900' : 'hover:text-red-600'}>🏛️</button>
           <button onClick={() => setView('write')} className={view === 'write' ? 'text-red-600' : 'hover:text-red-600'}>✍️</button>
           <button onClick={() => setView('profile')} className={view === 'profile' ? 'text-slate-900' : 'hover:text-red-600'}>👤</button>
+          <button onClick={() => setView('shop')} className={view === 'shop' ? 'text-slate-900' : 'hover:text-red-600'}>🛍️</button>
         </nav>
       </aside>
 
@@ -78,10 +86,18 @@ export default function SnippetsHub() {
           <div className="max-w-4xl mx-auto space-y-6">
             <h2 className="text-3xl font-serif font-bold italic text-center">Private Drafting Room</h2>
             <div className="bg-white/80 backdrop-blur shadow-2xl rounded-[40px] p-12 min-h-[500px] relative border border-white">
-              <textarea ref={textareaRef} value={content} onChange={(e) => setContent(e.target.value)} placeholder="Begin your legacy..." className="w-full h-[350px] bg-transparent outline-none text-xl leading-relaxed resize-none" />
+              <textarea 
+                ref={textareaRef}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Begin your legacy..."
+                className="w-full h-[350px] bg-transparent outline-none text-xl leading-relaxed resize-none"
+              />
               <div className="absolute bottom-10 right-10 flex gap-4">
-                 <button onClick={handleAiPolish} className="px-6 py-2 bg-purple-50 text-purple-600 rounded-full text-xs font-bold">{isAiLoading ? 'Analyzing...' : '✨ AI Polish'}</button>
-                 <button onClick={handleCapture} className="px-6 py-2 bg-slate-100 rounded-full text-xs font-bold">✂️ Snip Selection</button>
+                 <button onClick={handleAiPolish} className="px-6 py-2 bg-purple-50 text-purple-600 rounded-full text-xs font-bold hover:bg-purple-100 transition">
+                   {isAiLoading ? 'AI Analyzing...' : '✨ AI Polish'}
+                 </button>
+                 <button onClick={handleCapture} className="px-6 py-2 bg-slate-100 rounded-full text-xs font-bold hover:bg-orange-100 transition">✂️ Snip Selection</button>
                  <button className="px-8 py-3 bg-red-600 text-white rounded-full font-bold shadow-lg shadow-red-200">Publish Snippet</button>
               </div>
             </div>
@@ -111,7 +127,7 @@ export default function SnippetsHub() {
                 <input type="email" placeholder="Email" className="w-full p-4 bg-slate-50 border rounded-2xl" />
                 <input type="password" placeholder="Password" className="w-full p-4 bg-slate-50 border rounded-2xl" />
               </div>
-              <button className="w-full py-4 bg-red-600 text-white rounded-2xl font-bold shadow-lg">Enter the Hub</button>
+              <button className="w-full py-4 bg-red-600 text-white rounded-2xl font-bold">Enter the Hub</button>
               <button onClick={() => setShowAuth(false)} className="mt-4 text-slate-400 text-sm font-bold">Maybe Later</button>
             </div>
           </div>

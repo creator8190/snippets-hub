@@ -11,6 +11,8 @@ const supabase = createClient(
 export default function SnippetsHub() {
   const [view, setView] = useState('landing'); 
   const [showAuth, setShowAuth] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [content, setContent] = useState('');
   const [snippets, setSnippets] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
@@ -28,6 +30,21 @@ export default function SnippetsHub() {
     const { data } = await supabase.from('snippets').select('*').order('created_at', { ascending: false });
     if (data) setSnippets(data);
   }
+
+  const handleLogin = async () => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) {
+      alert(error.message);
+    } else {
+      setUser(data.user);
+      setShowAuth(false);
+      fetchSnippets(data.user.id);
+      setView('hub');
+    }
+  };
 
   const handleCapture = async () => {
     const textarea = textareaRef.current;
@@ -95,17 +112,9 @@ export default function SnippetsHub() {
           <div className="max-w-4xl mx-auto space-y-6">
             <h2 className="text-3xl font-serif font-bold italic text-center">Private Drafting Room</h2>
             <div className="bg-white/80 backdrop-blur shadow-2xl rounded-[40px] p-12 min-h-[500px] relative border border-white">
-              <textarea 
-                ref={textareaRef}
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="Begin your legacy..."
-                className="w-full h-[350px] bg-transparent outline-none text-xl leading-relaxed resize-none"
-              />
+              <textarea ref={textareaRef} value={content} onChange={(e) => setContent(e.target.value)} placeholder="Begin your legacy..." className="w-full h-[350px] bg-transparent outline-none text-xl leading-relaxed resize-none" />
               <div className="absolute bottom-10 right-10 flex gap-4">
-                 <button onClick={handleAiPolish} className="px-6 py-2 bg-purple-50 text-purple-600 rounded-full text-xs font-bold hover:bg-purple-100 transition">
-                   {isAiLoading ? 'AI Analyzing...' : '✨ AI Polish'}
-                 </button>
+                 <button onClick={handleAiPolish} className="px-6 py-2 bg-purple-50 text-purple-600 rounded-full text-xs font-bold hover:bg-purple-100 transition">{isAiLoading ? 'AI Analyzing...' : '✨ AI Polish'}</button>
                  <button onClick={handleCapture} className="px-6 py-2 bg-slate-100 rounded-full text-xs font-bold hover:bg-orange-100 transition">✂️ Snip Selection</button>
                  <button className="px-8 py-3 bg-red-600 text-white rounded-full font-bold shadow-lg shadow-red-200">Publish Snippet</button>
               </div>
@@ -133,10 +142,10 @@ export default function SnippetsHub() {
             <div className="bg-white p-12 rounded-[40px] shadow-2xl w-full max-w-md text-center">
               <h2 className="text-3xl font-serif font-bold mb-4 text-slate-900">Secure Access</h2>
               <div className="space-y-4 mb-6">
-                <input type="email" placeholder="Email" className="w-full p-4 bg-slate-50 border rounded-2xl" />
-                <input type="password" placeholder="Password" className="w-full p-4 bg-slate-50 border rounded-2xl" />
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="w-full p-4 bg-slate-50 border rounded-2xl" />
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="w-full p-4 bg-slate-50 border rounded-2xl" />
               </div>
-              <button className="w-full py-4 bg-red-600 text-white rounded-2xl font-bold">Enter the Hub</button>
+              <button onClick={handleLogin} className="w-full py-4 bg-red-600 text-white rounded-2xl font-bold">Enter the Hub</button>
               <button onClick={() => setShowAuth(false)} className="mt-4 text-slate-400 text-sm font-bold">Maybe Later</button>
             </div>
           </div>

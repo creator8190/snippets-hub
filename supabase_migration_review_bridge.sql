@@ -4,6 +4,10 @@
 -- Execute this SQL in your Supabase SQL Editor
 -- This creates the review_queue table and updates snippets table
 
+-- 0. Ensure profiles table has role column (if it doesn't exist)
+ALTER TABLE profiles 
+ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'author' CHECK (role IN ('author', 'editor'));
+
 -- 1. Add new columns to snippets table
 ALTER TABLE snippets 
 ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT false,
@@ -36,11 +40,17 @@ CREATE INDEX IF NOT EXISTS idx_snippets_verified ON snippets(verified);
 ALTER TABLE review_queue ENABLE ROW LEVEL SECURITY;
 
 -- 5. Create RLS Policies
+-- Drop existing policies if they exist (for re-running migration)
+DROP POLICY IF EXISTS "Students can view pending reviews" ON review_queue;
+DROP POLICY IF EXISTS "Authors can view their own submissions" ON review_queue;
+DROP POLICY IF EXISTS "Authors can create review submissions" ON review_queue;
+DROP POLICY IF EXISTS "Students can update assigned reviews" ON review_queue;
+
 -- Students can view pending reviews
 CREATE POLICY "Students can view pending reviews"
 ON review_queue FOR SELECT
 USING (
-  auth.uid() IN (SELECT id FROM profiles WHERE role = 'editor')
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'editor')
   AND status = 'pending'
 );
 
@@ -58,7 +68,7 @@ WITH CHECK (auth.uid() = author_id);
 CREATE POLICY "Students can update assigned reviews"
 ON review_queue FOR UPDATE
 USING (
-  auth.uid() IN (SELECT id FROM profiles WHERE role = 'editor')
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'editor')
   AND (editor_id IS NULL OR editor_id = auth.uid())
 );
 

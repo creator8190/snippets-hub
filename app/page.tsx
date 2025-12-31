@@ -1,161 +1,217 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
+// --- ENGINE INITIALIZATION ---
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 );
 
-export default function UltimateAuthorApp() {
-  // --- NAVIGATION & ROLE ---
+export default function GlobalAuthorTerminal() {
+  // --- CORE SYSTEM STATE ---
   const [view, setView] = useState('landing');
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [snippets, setSnippets] = useState<any[]>([]);
   const [marketItems, setMarketItems] = useState<any[]>([]);
   
-  // --- STATE FOR FEATURES ---
+  // --- UI & INTERACTION STATE ---
   const [content, setContent] = useState('');
+  const [title, setTitle] = useState('');
   const [price, setPrice] = useState('49.99');
   const [showAuth, setShowAuth] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('author'); // author | editor_student
-  const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const [activeTab, setActiveTab] = useState('inventory');
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // --- REVENUE & CREDIT LOGIC ---
-  const [creditsToEarn, setCreditsToEarn] = useState(3); // For students
-
+  // --- LIFECYCLE: DATA PERSISTENCE ---
   useEffect(() => {
-    const init = async () => {
+    const syncSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-      if (session?.user) fetchFullSystemData(session.user.id);
-      fetchMarket();
+      if (session) {
+        setUser(session.user);
+        await loadAuthenticatedData(session.user.id);
+      }
+      await loadGlobalMarket();
     };
-    init();
+    syncSession();
+
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (session?.user) fetchFullSystemData(session.user.id);
+      if (session?.user) loadAuthenticatedData(session.user.id);
     });
-    return () => authListener.subscription.unsubscribe();
+
+    return () => {
+      if (authListener) authListener.subscription.unsubscribe();
+    };
   }, []);
 
-  async function fetchFullSystemData(uid: string) {
-    const [p, s] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', uid).single(),
-      supabase.from('snippets').select('*').eq('user_id', uid).order('created_at', { ascending: false })
-    ]);
-    if (p.data) setProfile(p.data);
-    if (s.data) setSnippets(s.data);
+  async function loadAuthenticatedData(uid: string) {
+    const { data: p } = await supabase.from('profiles').select('*').eq('id', uid).single();
+    const { data: s } = await supabase.from('snippets').select('*').eq('user_id', uid).order('created_at', { ascending: false });
+    if (p) setProfile(p);
+    if (s) setSnippets(s);
   }
 
-  async function fetchMarket() {
+  async function loadGlobalMarket() {
     const { data } = await supabase.from('snippets').select('*, profiles(full_name)').eq('status', 'public');
     if (data) setMarketItems(data);
   }
 
-  const handleAuth = async () => {
+  // --- ACTION HANDLERS ---
+  const executeAuth = async () => {
+    setIsProcessing(true);
     if (isSignUp) {
       const { error } = await supabase.auth.signUp({ 
-        email, password, options: { data: { full_name: email.split('@')[0], role: role } } 
+        email, 
+        password,
+        options: { data: { full_name: email.split('@')[0], user_role: role, credits_earned: 0, total_earned: 0 } } 
       });
-      if (error) alert(error.message); else alert("Clearance pending. Check email.");
+      if (error) alert(error.message); else alert("Identity Created. Check Email for Verification.");
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) alert(error.message); else setShowAuth(false);
     }
+    setIsProcessing(false);
   };
 
-  const publishSnippet = async () => {
+  const commitToMarket = async () => {
     if (!user) { setShowAuth(true); return; }
-    const { data } = await supabase.from('snippets').insert([{
-      content, user_id: user.id, status: 'public', price: parseFloat(price),
-      preview_text: content.slice(0, 150) + "..."
-    }]).select();
-    if (data) { setSnippets([data[0], ...snippets]); setView('marketplace'); setContent(''); }
+    setIsProcessing(true);
+    
+    const snippetData = {
+      content,
+      title: title || 'Untitled Manuscript',
+      user_id: user.id,
+      status: 'public',
+      price: parseFloat(price),
+      preview_text: content.slice(0, 200) + "..."
+    };
+
+    const { data, error } = await supabase.from('snippets').insert([snippetData]).select();
+    
+    if (data) {
+      setSnippets([data[0], ...snippets]);
+      await loadGlobalMarket();
+      setView('marketplace');
+      setContent('');
+      setTitle('');
+    } else {
+      alert("Encryption Error: " + error.message);
+    }
+    setIsProcessing(false);
   };
 
+  // --- RENDER LOGIC ---
   return (
-    <div className="flex min-h-screen bg-[#020202] text-white selection:bg-red-600/50 font-sans overflow-x-hidden">
+    <div className="flex min-h-screen bg-[#020202] text-white selection:bg-red-600/50 font-sans tracking-tight">
       
-      {/* GLOBAL RED GLOW */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-[-15%] right-[-10%] w-[1200px] h-[1200px] bg-red-600/5 blur-[250px] rounded-full" />
-        <div className="absolute bottom-[-10%] left-[-10%] w-[800px] h-[800px] bg-white/[0.01] blur-[150px] rounded-full" />
+      {/* ATMOSPHERIC GRADIENTS */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div className="absolute top-[-20%] right-[-10%] w-[1400px] h-[1400px] bg-red-600/[0.04] blur-[280px] rounded-full" />
+        <div className="absolute bottom-[-10%] left-[-5%] w-[900px] h-[900px] bg-white/[0.01] blur-[200px] rounded-full" />
       </div>
 
-      {/* LEFT EXECUTIVE NAVIGATION */}
-      <aside className="w-28 bg-black/80 backdrop-blur-3xl border-r border-white/5 flex flex-col items-center py-14 gap-12 sticky top-0 h-screen z-50">
-        <div onClick={() => setView('landing')} className="text-4xl font-serif font-black text-red-600 cursor-pointer hover:scale-110 transition">S.</div>
-        <nav className="flex flex-col gap-12 text-3xl text-zinc-800">
-          <button onClick={() => setView('hub')} className={view === 'hub' ? 'text-red-600' : 'hover:text-white transition-all'}>🏛️</button>
-          <button onClick={() => setView('write')} className={view === 'write' ? 'text-red-600' : 'hover:text-white transition-all'}>✍️</button>
-          <button onClick={() => setView('marketplace')} className={view === 'marketplace' ? 'text-red-600' : 'hover:text-white transition-all'}>🛍️</button>
-          <button onClick={() => setView('profile')} className={view === 'profile' ? 'text-red-600' : 'hover:text-white transition-all'}>👤</button>
+      {/* EXECUTIVE NAVIGATION SIDEBAR */}
+      <aside className="w-32 bg-black/95 border-r border-white/5 flex flex-col items-center py-16 gap-16 sticky top-0 h-screen z-50">
+        <div onClick={() => setView('landing')} className="text-5xl font-serif font-black text-red-600 cursor-pointer hover:scale-110 transition-transform duration-500">S.</div>
+        <nav className="flex flex-col gap-14 text-4xl text-zinc-800">
+          <button onClick={() => setView('hub')} title="Executive Hub" className={view === 'hub' ? 'text-red-600 scale-125' : 'hover:text-white transition-all'}>🏛️</button>
+          <button onClick={() => setView('write')} title="Drafting Terminal" className={view === 'write' ? 'text-red-600 scale-125' : 'hover:text-white transition-all'}>✍️</button>
+          <button onClick={() => setView('marketplace')} title="Global Exchange" className={view === 'marketplace' ? 'text-red-600 scale-125' : 'hover:text-white transition-all'}>🛍️</button>
+          <button onClick={() => setView('profile')} title="Author Identity" className={view === 'profile' ? 'text-red-600 scale-125' : 'hover:text-white transition-all'}>👤</button>
         </nav>
-        <div className="mt-auto group relative cursor-help flex flex-col items-center gap-4">
-            <span className="text-zinc-800 font-black text-[9px] tracking-[0.5em] vertical-text">ENCRYPTED</span>
-            <div className="w-1 h-12 bg-gradient-to-b from-red-600 to-transparent opacity-50" />
+        <div className="mt-auto group relative cursor-help flex flex-col items-center gap-6">
+            <div className="w-[1px] h-32 bg-gradient-to-b from-transparent via-red-600/50 to-transparent" />
+            <span className="text-zinc-800 font-black text-[10px] tracking-[0.6em] vertical-text uppercase">Verified Terminal</span>
         </div>
       </aside>
 
-      <main className="flex-1 p-24 relative z-10 overflow-y-auto h-screen">
+      {/* MAIN VIEWPORT */}
+      <main className="flex-1 p-24 relative z-10 overflow-y-auto h-screen scrollbar-hide">
         
-        {/* LANDING: THE FULL ENTRY GATE */}
+        {/* LANDING VIEW */}
         {view === 'landing' && (
           <div className="max-w-7xl animate-in fade-in slide-in-from-left-12 duration-1000">
-            <div className="flex items-center gap-6 mb-12">
-                <span className="bg-red-600 text-white px-5 py-2 rounded-full text-[10px] font-black tracking-[0.5em] uppercase">Phase 1 Live</span>
-                <span className="text-zinc-600 text-[10px] font-black tracking-[0.5em] uppercase italic">Author & Editor Protocol</span>
-            </div>
-            <h1 className="text-[185px] font-serif font-bold tracking-tighter leading-[0.72] mb-16 drop-shadow-2xl">
+            <header className="flex items-center gap-8 mb-16">
+                <div className="flex items-center gap-3 bg-red-600 text-white px-6 py-2 rounded-full shadow-[0_0_40px_rgba(220,38,38,0.3)]">
+                    <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                    <span className="text-[11px] font-black tracking-[0.5em] uppercase">System Live</span>
+                </div>
+                <span className="text-zinc-600 text-[11px] font-black tracking-[0.5em] uppercase italic">Encrypted IP Exchange</span>
+            </header>
+
+            <h1 className="text-[195px] font-serif font-bold tracking-[ -0.06em] leading-[0.7] mb-20 drop-shadow-3xl">
               Write. <br/>Protect. <br/><span className="text-red-600 italic">Earn.</span>
             </h1>
-            <p className="text-4xl text-zinc-500 max-w-4xl font-light leading-relaxed mb-20 border-l-[6px] border-red-600 pl-16">
-              The only terminal where professional authors secure IP and university students earn degree credits through elite editing.
-            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-20 mb-32 items-start">
+                <p className="text-5xl text-zinc-500 font-light leading-snug border-l-[10px] border-red-600 pl-20 py-4">
+                  The definitive terminal where <span className="text-white font-medium">elite authors</span> secure intellectual property and <span className="text-white font-medium">student editors</span> gain professional degree credits.
+                </p>
+                <div className="flex flex-col gap-10 pt-4">
+                    <div className="bg-zinc-900/40 p-10 rounded-[50px] border border-white/5 backdrop-blur-xl">
+                        <h4 className="text-red-600 font-black uppercase tracking-[0.3em] text-xs mb-4">Total Ecosystem Revenue</h4>
+                        <p className="text-6xl font-serif font-bold">$1.42M+</p>
+                    </div>
+                    <div className="bg-zinc-900/40 p-10 rounded-[50px] border border-white/5 backdrop-blur-xl">
+                        <h4 className="text-zinc-600 font-black uppercase tracking-[0.3em] text-xs mb-4">Verified Authors</h4>
+                        <p className="text-6xl font-serif font-bold">8,402</p>
+                    </div>
+                </div>
+            </div>
             
-            <div className="flex gap-12 items-center">
+            <div className="flex gap-16 items-center">
               {!user ? (
                 <>
-                  <button onClick={() => { setIsSignUp(true); setShowAuth(true); }} className="px-24 py-10 bg-red-600 text-white rounded-[35px] font-black text-3xl shadow-[0_25px_60px_rgba(220,38,38,0.4)] hover:translate-y-[-5px] transition-all duration-500">Join for Free</button>
-                  <button onClick={() => { setIsSignUp(false); setShowAuth(true); }} className="text-2xl font-bold border-b-2 border-white/20 pb-2 hover:border-red-600 transition-all">Member Login</button>
+                  <button onClick={() => { setIsSignUp(true); setShowAuth(true); }} className="px-32 py-12 bg-red-600 text-white rounded-[45px] font-black text-4xl shadow-[0_35px_80px_rgba(220,38,38,0.4)] hover:translate-y-[-10px] transition-all duration-700 active:scale-95">Join for Free</button>
+                  <button onClick={() => { setIsSignUp(false); setShowAuth(true); }} className="text-3xl font-bold border-b-4 border-white/10 pb-4 hover:border-red-600 transition-all duration-500 hover:text-red-600">Secure Member Entry</button>
                 </>
               ) : (
-                <button onClick={() => setView('write')} className="px-24 py-10 bg-red-600 text-white rounded-[35px] font-black text-3xl shadow-2xl transition-all">Initialize Dashboard</button>
+                <button onClick={() => setView('write')} className="px-32 py-12 bg-red-600 text-white rounded-[45px] font-black text-4xl shadow-2xl hover:scale-105 transition-all">Initialize Terminal</button>
               )}
             </div>
           </div>
         )}
 
-        {/* MARKETPLACE: THE COMMERCE ENGINE */}
+        {/* MARKETPLACE VIEW */}
         {view === 'marketplace' && (
           <div className="max-w-7xl animate-in fade-in duration-700">
-            <header className="flex justify-between items-end border-b border-white/5 pb-16 mb-24">
+            <header className="flex justify-between items-end border-b-2 border-white/5 pb-20 mb-32">
               <div>
-                <h2 className="text-9xl font-serif font-bold italic tracking-tighter">Exchange</h2>
-                <p className="text-zinc-500 mt-6 text-2xl">Acquire verified intellectual property block-by-block.</p>
+                <h2 className="text-[150px] font-serif font-bold italic tracking-tighter leading-none mb-6">Exchange</h2>
+                <p className="text-zinc-500 text-3xl font-light">Acquire and license exclusive intellectual property blocks directly from the source.</p>
               </div>
               <div className="text-right">
-                <div className="text-6xl font-mono font-bold text-white tracking-tighter">{marketItems.length}</div>
-                <div className="text-[11px] uppercase font-black text-zinc-700 tracking-[0.5em]">Live IP Blocks</div>
+                <div className="text-9xl font-mono font-bold text-white tracking-tighter mb-2">{marketItems.length}</div>
+                <div className="text-[12px] uppercase font-black text-zinc-700 tracking-[0.6em]">IP Blocks in Escrow</div>
               </div>
             </header>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-20">
               {marketItems.map((item, i) => (
-                <div key={i} className="bg-zinc-900/30 backdrop-blur-3xl border border-white/5 p-16 rounded-[80px] hover:border-red-600/40 transition-all group relative overflow-hidden">
-                  <div className="flex justify-between mb-12">
-                    <span className="text-red-600 text-[11px] font-black tracking-widest uppercase italic border border-red-600/20 px-3 py-1 rounded-full">Secure Block</span>
+                <div key={i} className="bg-zinc-900/30 backdrop-blur-3xl border border-white/10 p-16 rounded-[100px] hover:border-red-600/50 transition-all duration-700 group relative">
+                  <div className="absolute top-10 right-10">
                     <span className="text-4xl font-bold font-mono text-white tracking-tighter">${item.price}</span>
                   </div>
-                  <p className="text-zinc-300 italic text-2xl leading-relaxed mb-16 h-56 overflow-hidden">"{item.preview_text || item.content}"</p>
-                  <div className="flex flex-col gap-4">
-                    <button className="w-full py-6 bg-white text-black rounded-3xl font-black uppercase text-xs hover:bg-red-600 hover:text-white transition-all shadow-xl">Purchase License</button>
-                    <span className="text-center text-[9px] text-zinc-600 uppercase font-black tracking-widest">Ownership Transfer Included</span>
+                  <div className="mb-14">
+                    <span className="text-red-600 text-[12px] font-black tracking-widest uppercase italic border border-red-600/30 px-6 py-2 rounded-full bg-red-600/5">Verified Asset</span>
+                  </div>
+                  <h3 className="text-4xl font-serif font-bold mb-6 text-zinc-200">"{item.title || 'Untitled Protocol'}"</h3>
+                  <p className="text-zinc-400 italic text-2xl leading-relaxed mb-20 h-64 overflow-hidden border-t border-white/5 pt-8">
+                    {item.preview_text || item.content}
+                  </p>
+                  <div className="flex flex-col gap-6">
+                    <button className="w-full py-8 bg-white text-black rounded-[45px] font-black uppercase text-sm hover:bg-red-600 hover:text-white transition-all shadow-2xl active:scale-95">Acquire Rights</button>
+                    <div className="flex justify-between px-6 text-[10px] font-black text-zinc-700 uppercase tracking-widest">
+                        <span>By {item.profiles?.full_name || 'Anonymous Author'}</span>
+                        <span>Full Rights Incl.</span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -163,99 +219,173 @@ export default function UltimateAuthorApp() {
           </div>
         )}
 
-        {/* EDITOR: THE DRAFTING & SNIPPET ROOM */}
-        {view === 'write' && (
-          <div className="max-w-6xl mx-auto animate-in zoom-in-95 duration-500">
-            <div className="bg-zinc-900/40 backdrop-blur-3xl border border-white/10 p-28 rounded-[110px] shadow-3xl">
-              <div className="flex justify-between items-center mb-12">
-                <span className="text-red-600 font-black text-xs uppercase tracking-[0.4em]">Drafting Protocol 01</span>
-                <div className="flex gap-4">
-                  <div className="w-3 h-3 rounded-full bg-red-600" />
-                  <div className="w-3 h-3 rounded-full bg-zinc-800" />
-                  <div className="w-3 h-3 rounded-full bg-zinc-800" />
-                </div>
-              </div>
-              <textarea 
-                value={content} 
-                onChange={(e) => setContent(e.target.value)} 
-                placeholder="Initialize manuscript or paste IP block..." 
-                className="w-full h-[550px] bg-transparent outline-none text-5xl font-serif leading-relaxed placeholder:text-zinc-900 scrollbar-hide"
-              />
-              <div className="mt-20 flex justify-between items-center border-t border-white/5 pt-20">
-                <button className="text-purple-500 font-black text-xs uppercase tracking-[0.4em] hover:text-white transition">⚡ AI Structural Analysis</button>
-                <div className="flex items-center gap-10">
-                  <div className="bg-black border border-white/10 px-10 py-6 rounded-3xl flex items-center">
-                    <span className="text-zinc-700 font-bold text-xl mr-6">$</span>
-                    <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="bg-transparent outline-none font-mono text-3xl w-32" />
-                  </div>
-                  <button onClick={publishSnippet} className="px-24 py-9 bg-red-600 rounded-[40px] font-black text-3xl shadow-[0_20px_50px_rgba(220,38,38,0.3)] hover:scale-105 active:scale-95 transition-all">
-                    Publish Snippet
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* PROFILE: THE COMPREHENSIVE DASHBOARD */}
+        {/* PROFILE VIEW */}
         {view === 'profile' && (
-          <div className="max-w-6xl mx-auto space-y-16 animate-in slide-in-from-bottom-12">
-            <div className="bg-zinc-900/50 backdrop-blur-3xl border border-white/10 p-24 rounded-[110px] relative shadow-3xl overflow-hidden">
-              <div className="absolute top-12 right-12">
-                <span className="bg-red-600/10 text-red-600 border border-red-600/20 px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest italic">
-                  {profile?.role === 'editor' ? 'Elite Editor' : 'Author Pro'}
+          <div className="max-w-7xl mx-auto space-y-24 animate-in slide-in-from-bottom-20 duration-1000">
+            {/* MAIN PROFILE CARD */}
+            <div className="bg-zinc-900/50 backdrop-blur-3xl border border-white/10 p-32 rounded-[130px] relative shadow-[0_50px_100px_rgba(0,0,0,0.5)] overflow-hidden">
+              <div className="absolute top-16 right-16">
+                <span className="bg-red-600 text-white px-10 py-3 rounded-full text-[13px] font-black uppercase tracking-[0.5em] italic shadow-2xl">
+                  {profile?.user_role === 'editor' ? 'Elite Student Editor' : 'Professional Author'}
                 </span>
               </div>
               
-              <div className="flex items-center gap-20 mb-24">
-                <div className="w-56 h-56 bg-red-600 rounded-[75px] flex items-center justify-center text-8xl shadow-2xl rotate-3">👤</div>
+              <div className="flex items-center gap-28 mb-32">
+                <div className="w-72 h-72 bg-red-600 rounded-[95px] flex items-center justify-center text-[120px] shadow-[0_0_120px_rgba(220,38,38,0.4)] rotate-3">👤</div>
                 <div>
-                  <h2 className="text-9xl font-serif font-bold italic tracking-tighter mb-4">{profile?.full_name || 'Verified Member'}</h2>
-                  <p className="text-zinc-600 font-mono text-2xl tracking-[0.3em]">{user?.email}</p>
+                  <h2 className="text-[130px] font-serif font-bold italic tracking-tighter mb-4 leading-none">{profile?.full_name || 'Verified Member'}</h2>
+                  <p className="text-zinc-600 font-mono text-3xl tracking-[0.4em] uppercase">{user?.email}</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-24 border-t border-white/5 pt-24 text-center">
-                <div>
-                  <p className="text-8xl font-bold mb-4 tracking-tighter">{snippets.length}</p>
-                  <p className="text-xs uppercase font-black text-zinc-700 tracking-[0.5em]">Inventory</p>
+              <div className="grid grid-cols-3 gap-32 border-t border-white/10 pt-32 text-center">
+                <div className="group cursor-default">
+                  <p className="text-[120px] font-bold mb-6 tracking-tighter group-hover:text-red-600 transition-colors">{snippets.length}</p>
+                  <p className="text-xs uppercase font-black text-zinc-700 tracking-[0.6em]">IP Inventory</p>
                 </div>
                 <div>
-                  {profile?.role === 'editor' ? (
-                    <>
-                      <p className="text-8xl font-bold mb-4 text-red-600 tracking-tighter">{profile?.total_earned || '12'}</p>
-                      <p className="text-xs uppercase font-black text-zinc-700 tracking-[0.5em]">Degree Credits</p>
-                    </>
+                  {profile?.user_role === 'editor' ? (
+                    <div className="group cursor-default">
+                      <p className="text-[120px] font-bold mb-6 text-red-600 tracking-tighter">{profile?.credits_earned || '12'}</p>
+                      <p className="text-xs uppercase font-black text-zinc-700 tracking-[0.6em]">Degree Credits Earned</p>
+                    </div>
                   ) : (
-                    <>
-                      <p className="text-8xl font-bold mb-4 text-red-600 tracking-tighter">${profile?.total_earned || '0.00'}</p>
-                      <p className="text-xs uppercase font-black text-zinc-700 tracking-[0.5em]">Net Revenue</p>
-                    </>
+                    <div className="group cursor-default">
+                      <p className="text-[120px] font-bold mb-6 text-red-600 tracking-tighter">${profile?.total_earned || '0.00'}</p>
+                      <p className="text-xs uppercase font-black text-zinc-700 tracking-[0.6em]">Net Royalties</p>
+                    </div>
                   )}
                 </div>
-                <div className="flex flex-col justify-center gap-6">
-                    <button className="py-5 bg-white text-black rounded-3xl text-[11px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition">Edit Profile</button>
-                    <button onClick={() => supabase.auth.signOut()} className="text-zinc-800 hover:text-red-600 text-[10px] font-black uppercase tracking-[0.4em] transition">Terminate Session</button>
+                <div className="flex flex-col justify-center gap-10">
+                    <button className="py-7 bg-white text-black rounded-[40px] text-[13px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-xl active:scale-95">Executive Settings</button>
+                    <button onClick={() => supabase.auth.signOut()} className="text-zinc-800 hover:text-red-600 text-xs font-black uppercase tracking-[0.6em] transition-all">Terminate Session</button>
                 </div>
               </div>
             </div>
-            
-            {/* THE "STAY FOR FREE" / PRO TEASER */}
-            <div className="bg-white p-20 rounded-[100px] flex justify-between items-center group shadow-2xl">
-              <div>
-                <h3 className="text-black text-6xl font-serif font-bold italic mb-4 tracking-tighter">Scale Your Impact.</h3>
-                <p className="text-zinc-500 text-2xl font-medium tracking-tight">Unlimited marketplace reach and instant 0-fee payouts.</p>
-              </div>
-              <button className="px-20 py-10 bg-red-600 text-white rounded-[45px] font-black text-3xl shadow-xl hover:scale-105 transition-all">Go Elite — $29</button>
+
+            {/* TABBED INVENTORY SECTION */}
+            <div className="space-y-16 pb-32">
+                <div className="flex gap-16 border-b border-white/5 pb-8">
+                    <button onClick={() => setActiveTab('inventory')} className={`text-4xl font-serif font-bold italic transition-all ${activeTab === 'inventory' ? 'text-white border-b-4 border-red-600 pb-4' : 'text-zinc-700'}`}>Private Vault</button>
+                    <button onClick={() => setActiveTab('sales')} className={`text-4xl font-serif font-bold italic transition-all ${activeTab === 'sales' ? 'text-white border-b-4 border-red-600 pb-4' : 'text-zinc-700'}`}>Sales History</button>
+                </div>
+                
+                {activeTab === 'inventory' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-16">
+                        {snippets.length > 0 ? snippets.map((s, i) => (
+                            <div key={i} className="bg-zinc-900/20 border border-white/5 p-16 rounded-[80px] flex justify-between items-center group hover:bg-zinc-900/40 transition-all">
+                                <div>
+                                    <h5 className="text-3xl font-serif font-bold mb-4">{s.title || 'Untitled Manuscript'}</h5>
+                                    <p className="text-zinc-600 text-sm font-mono uppercase tracking-widest">{new Date(s.created_at).toLocaleDateString()}</p>
+                                </div>
+                                <button className="px-10 py-5 bg-zinc-800 text-white rounded-full font-black text-xs hover:bg-red-600 transition-all">Manage</button>
+                            </div>
+                        )) : (
+                            <div className="col-span-2 text-center py-32 border-2 border-dashed border-white/5 rounded-[80px]">
+                                <p className="text-zinc-700 text-3xl font-serif italic">The vault is currently empty.</p>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
           </div>
         )}
 
-        {/* THE GATE: LOG IN / SIGN UP OVERLAY */}
+        {/* WRITE VIEW */}
+        {view === 'write' && (
+          <div className="max-w-7xl mx-auto animate-in zoom-in-95 duration-700">
+            <div className="bg-zinc-900/30 backdrop-blur-3xl border border-white/10 p-32 rounded-[130px] shadow-3xl">
+              <header className="flex justify-between items-center mb-16">
+                <div className="flex items-center gap-6">
+                    <h3 className="text-zinc-600 font-black text-sm uppercase tracking-[0.7em]">Drafting Protocol 7.4</h3>
+                    <div className="w-[1px] h-8 bg-white/10" />
+                    <input 
+                      value={title} 
+                      onChange={(e) => setTitle(e.target.value)} 
+                      placeholder="Protocol Title..." 
+                      className="bg-transparent outline-none text-2xl font-serif italic text-white placeholder:text-zinc-800 w-96" 
+                    />
+                </div>
+                <div className="flex gap-8 items-center">
+                  <span className="text-purple-600 font-black text-[11px] uppercase tracking-widest animate-pulse">Neural Link Active</span>
+                  <div className="w-5 h-5 rounded-full bg-red-600 shadow-[0_0_20px_rgba(220,38,38,0.8)]" />
+                </div>
+              </header>
+
+              <textarea 
+                value={content} 
+                onChange={(e) => setContent(e.target.value)} 
+                placeholder="Initialize manuscript... lock your intellectual property... prepare for the global stage." 
+                className="w-full h-[650px] bg-transparent outline-none text-6xl font-serif leading-[1.4] placeholder:text-zinc-900 scrollbar-hide resize-none"
+              />
+
+              <footer className="mt-28 flex justify-between items-center border-t border-white/10 pt-24">
+                <div className="flex gap-20">
+                    <div className="flex flex-col">
+                        <span className="text-zinc-700 font-black text-xs uppercase tracking-[0.5em] mb-4">Structural Density</span>
+                        <span className="text-white font-mono text-4xl font-bold">{content ? content.split(' ').length : 0} <span className="text-zinc-800 text-lg">Words</span></span>
+                    </div>
+                    <div className="flex flex-col">
+                        <span className="text-zinc-700 font-black text-xs uppercase tracking-[0.5em] mb-4">AI Sentiment</span>
+                        <span className="text-white font-mono text-4xl font-bold text-green-500">EXECUTIVE</span>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-16">
+                  <div className="bg-black/60 border border-white/10 px-14 py-8 rounded-[40px] flex items-center shadow-inner">
+                    <span className="text-zinc-700 font-bold text-4xl mr-10">$</span>
+                    <input 
+                      type="number" 
+                      value={price} 
+                      onChange={(e) => setPrice(e.target.value)} 
+                      className="bg-transparent outline-none font-mono text-5xl w-44 text-white" 
+                    />
+                  </div>
+                  <button 
+                    onClick={commitToMarket} 
+                    disabled={isProcessing}
+                    className="px-32 py-12 bg-red-600 text-white rounded-[50px] font-black text-4xl shadow-[0_30px_70px_rgba(220,38,38,0.4)] hover:scale-105 active:scale-95 transition-all duration-500 disabled:opacity-50"
+                  >
+                    {isProcessing ? 'ENCRYPTING...' : 'LIST FOR SALE'}
+                  </button>
+                </div>
+              </footer>
+            </div>
+          </div>
+        )}
+
+        {/* AUTHENTICATION OVERLAY */}
         {showAuth && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/98 backdrop-blur-3xl p-6">
-            <div className="bg-[#080808] p-24 rounded-[120px] w-full max-w-3xl border border-white/5 text-center relative shadow-3xl">
-              <div className="absolute top-0 left-0 w-2 h-full bg-red-600 rounded-l-full" />
-              <h2 className="text-8xl font-serif font-bold mb-12 italic tracking-tighter">{isSignUp ? 'Apply' : 'Entry'}</h2>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/98 backdrop-blur-[50px] p-8">
+            <div className="bg-[#080808] p-32 rounded-[140px] w-full max-w-4xl border border-white/5 text-center relative shadow-[0_0_200px_rgba(220,38,38,0.15)] overflow-hidden">
+              <div className="absolute top-0 left-0 w-3 h-full bg-red-600 rounded-l-full" />
+              <h2 className="text-[100px] font-serif font-bold mb-16 italic tracking-tighter leading-none">{isSignUp ? 'Apply' : 'Entry'}</h2>
               
               {isSignUp && (
+                <div className="flex gap-8 mb-16 justify-center">
+                  <button onClick={() => setRole('author')} className={`px-12 py-4 rounded-full text-[13px] font-black uppercase tracking-widest border transition-all ${role === 'author' ? 'bg-red-600 border-red-600 shadow-[0_0_40px_rgba(220,38,38,0.3)]' : 'border-white/10 text-zinc-700 hover:text-white'}`}>Professional Author</button>
+                  <button onClick={() => setRole('editor')} className={`px-12 py-4 rounded-full text-[13px] font-black uppercase tracking-widest border transition-all ${role === 'editor' ? 'bg-red-600 border-red-600 shadow-[0_0_40px_rgba(220,38,38,0.3)]' : 'border-white/10 text-zinc-700 hover:text-white'}`}>Student Editor</button>
+                </div>
+              )}
+
+              <div className="space-y-8 mb-20 max-w-2xl mx-auto">
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email Identity" className="w-full p-12 bg-black border border-white/10 rounded-[55px] text-white outline-none focus:border-red-600 text-4xl transition-all" />
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Access Key" className="w-full p-12 bg-black border border-white/10 rounded-[55px] text-white outline-none focus:border-red-600 text-4xl transition-all" />
+              </div>
+
+              <button 
+                onClick={executeAuth} 
+                disabled={isProcessing}
+                className="w-full max-w-2xl py-12 bg-red-600 rounded-[60px] font-black text-5xl shadow-[0_30px_70px_rgba(220,38,38,0.3)] hover:bg-white hover:text-black transition-all duration-700 disabled:opacity-50"
+              >
+                {isProcessing ? 'PROCESSING...' : 'EXECUTE'}
+              </button>
+              
+              <button onClick={() => setShowAuth(false)} className="mt-16 text-zinc-800 hover:text-zinc-500 font-black text-sm uppercase tracking-[0.6em] block mx-auto transition-all">Abort Protocol</button>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}

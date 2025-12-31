@@ -11,7 +11,8 @@ ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'author' CHECK (role IN ('author', 'e
 -- 1. Add new columns to snippets table
 ALTER TABLE snippets 
 ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT false,
-ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'draft' CHECK (verification_status IN ('draft', 'pending_review', 'in_review', 'verified', 'rejected'));
+ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'draft' CHECK (verification_status IN ('draft', 'pending_review', 'in_review', 'verified', 'rejected')),
+ADD COLUMN IF NOT EXISTS verified_by_editor_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
 
 -- 2. Create review_queue table
 CREATE TABLE IF NOT EXISTS review_queue (
@@ -94,11 +95,12 @@ BEGIN
     SET credits = COALESCE(credits, 0) + 1
     WHERE id = NEW.editor_id;
     
-    -- Mark snippet as verified
+    -- Mark snippet as verified and track which editor verified it
     UPDATE snippets 
     SET verified = true, 
         verification_status = 'verified',
-        status = 'public'
+        status = 'public',
+        verified_by_editor_id = NEW.editor_id
     WHERE id = NEW.snippet_id;
   END IF;
   

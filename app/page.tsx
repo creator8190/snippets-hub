@@ -24,6 +24,10 @@ export default function AuthorEditorTerminal() {
   const [reviewNotes, setReviewNotes] = useState('');
   const [pendingReviews, setPendingReviews] = useState<any[]>([]); // Author's submitted reviews
   
+  // --- REFINERY STATE ---
+  const [selectedText, setSelectedText] = useState('');
+  const [isRefining, setIsRefining] = useState(false);
+  
   // --- EDITOR & COMMERCE STATE ---
   const [content, setContent] = useState('');
   const [title, setTitle] = useState('');
@@ -98,7 +102,11 @@ export default function AuthorEditorTerminal() {
   async function loadMarketRegistry() {
     const { data } = await supabase
       .from('snippets')
-      .select('*, profiles(full_name)')
+      .select(`
+        *,
+        profiles!snippets_user_id_fkey(full_name),
+        verified_editor:profiles!snippets_verified_by_editor_id_fkey(full_name)
+      `)
       .eq('status', 'public')
       .eq('verified', true)
       .order('created_at', { ascending: false });
@@ -274,6 +282,102 @@ export default function AuthorEditorTerminal() {
     setIsBusy(false);
   };
 
+  // --- REFINERY ACTIONS ---
+  const handleTextSelection = () => {
+    const textarea = document.querySelector('textarea[placeholder*="Initialize your text"]') as HTMLTextAreaElement;
+    if (textarea) {
+      const selected = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+      setSelectedText(selected);
+    }
+  };
+
+  const extractToReview = async () => {
+    if (!selectedText.trim() || !user) {
+      alert('Please select text to extract.');
+      return;
+    }
+    setIsBusy(true);
+    
+    // Create a new snippet from selected text
+    const { data: snippetData, error: snippetError } = await supabase
+      .from('snippets')
+      .insert([{
+        title: `Extracted: ${title || 'Untitled'}`,
+        content: selectedText,
+        user_id: user.id,
+        status: 'draft',
+        verification_status: 'draft',
+        price: parseFloat(price) || 0,
+        preview_text: selectedText.slice(0, 150) + (selectedText.length > 150 ? "..." : ""),
+        verified: false
+      }])
+      .select()
+      .single();
+    
+    if (snippetError) {
+      alert(snippetError.message);
+      setIsBusy(false);
+      return;
+    }
+    
+    // Immediately submit to review queue
+    const { data: reviewData, error: reviewError } = await supabase
+      .from('review_queue')
+      .insert([{
+        snippet_id: snippetData.id,
+        author_id: user.id,
+        status: 'pending'
+      }])
+      .select('*, snippets(*)')
+      .single();
+    
+    if (reviewData) {
+      await supabase
+        .from('snippets')
+        .update({ verification_status: 'pending_review' })
+        .eq('id', snippetData.id);
+      
+      setPendingReviews([reviewData, ...pendingReviews]);
+      setSnippets([snippetData, ...snippets]);
+      setSelectedText('');
+      if (profile?.role === 'editor') {
+        loadReviewQueue();
+      }
+      alert('Text extracted and submitted for review!');
+    } else if (reviewError) {
+      alert(reviewError.message);
+    }
+    setIsBusy(false);
+  };
+
+  const refineWithAI = async () => {
+    if (!content.trim()) {
+      alert('Please write some content first.');
+      return;
+    }
+    setIsRefining(true);
+    
+    try {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: content, mode: 'refine' })
+      });
+      
+      const data = await response.json();
+      if (data.refined) {
+        setContent(data.refined);
+        alert('Content professionalized! Review and adjust as needed.');
+      } else {
+        alert('Refinement failed. Please try again.');
+      }
+    } catch (error) {
+      alert('Error refining content. Please try again.');
+    } finally {
+      setIsRefining(false);
+    }
+  };
+
   const rejectReview = async () => {
     if (!selectedReview || !user) return;
     if (!reviewNotes.trim()) {
@@ -370,7 +474,7 @@ export default function AuthorEditorTerminal() {
               <span className="bg-red-600 text-white text-[10px] font-black tracking-[0.5em] px-4 py-1 rounded-full">EST. 2025</span>
               <span className="text-zinc-700 text-[10px] font-black tracking-[0.5em] uppercase">Executive Writing Protocol</span>
             </div>
-            <h1 className="text-8xl md:text-[140px] font-serif font-bold tracking-tighter leading-[0.8] mb-12 text-white drop-shadow-2xl">
+            <h1 className="font-serif font-bold tracking-tighter leading-[0.8] mb-12 text-white drop-shadow-2xl" style={{ fontSize: 'clamp(3rem, 10vw, 8.75rem)' }}>
               Write. <br/>Protect. <br/><span className="text-red-600 italic">Earn.</span>
             </h1>
             <p className="text-3xl text-zinc-500 max-w-3xl font-light leading-relaxed mb-16 border-l-4 border-red-600 pl-12">
@@ -397,7 +501,7 @@ export default function AuthorEditorTerminal() {
                 <input 
                   value={title} onChange={(e) => setTitle(e.target.value)} 
                   placeholder="Untitled Manuscript..." 
-                  className="bg-transparent text-6xl font-serif font-bold text-white outline-none placeholder:text-zinc-900 w-full"
+                  className="bg-transparent font-serif font-bold text-white outline-none placeholder:text-zinc-900 w-full" style={{ fontSize: 'clamp(2rem, 6vw, 3.75rem)' }}
                 />
               </div>
               <div className="flex items-center gap-8">
@@ -409,6 +513,9 @@ export default function AuthorEditorTerminal() {
                   <button onClick={saveDraft} disabled={isBusy} className="px-8 py-5 bg-zinc-900/50 text-zinc-400 rounded-full font-black text-sm uppercase tracking-widest border border-white/5 hover:bg-zinc-800 hover:text-white transition-all">
                     {isBusy ? 'Saving...' : 'Save Draft'}
                   </button>
+                  <button onClick={refineWithAI} disabled={isRefining || !content.trim()} className="px-8 py-5 bg-purple-600/20 text-purple-400 rounded-full font-black text-sm uppercase tracking-widest border border-purple-600/30 hover:bg-purple-600 hover:text-white transition-all disabled:opacity-50">
+                    {isRefining ? 'Refining...' : 'Refine'}
+                  </button>
                   <button onClick={commitAssetToMarket} disabled={isBusy || (!title.trim() && !content.trim())} className="px-12 py-5 bg-red-600 text-white rounded-full font-black text-lg uppercase tracking-widest shadow-xl hover:bg-white hover:text-black transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                     {isBusy ? 'Submitting...' : 'Submit for Review'}
                   </button>
@@ -418,11 +525,24 @@ export default function AuthorEditorTerminal() {
             
             <div className="flex-1 bg-zinc-900/20 rounded-[60px] border border-white/5 p-12 relative shadow-inner overflow-hidden">
                <textarea 
-                  value={content} onChange={(e) => setContent(e.target.value)} 
+                  value={content} 
+                  onChange={(e) => setContent(e.target.value)}
+                  onMouseUp={handleTextSelection}
+                  onKeyUp={handleTextSelection}
+                  onSelect={handleTextSelection}
                   placeholder="Initialize your text... Students earn credits for reviewing this."
                   className="w-full h-full bg-transparent outline-none text-4xl font-serif leading-relaxed text-zinc-300 placeholder:text-zinc-900 resize-none scrollbar-hide"
                />
                <div className="absolute bottom-10 right-16 flex items-center gap-6">
+                  {selectedText.trim() && (
+                    <button
+                      onClick={extractToReview}
+                      disabled={isBusy}
+                      className="px-6 py-3 bg-blue-600/20 text-blue-400 rounded-full font-black text-xs uppercase tracking-widest border border-blue-600/30 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50"
+                    >
+                      Extract to Review
+                    </button>
+                  )}
                   <div className="flex gap-2">
                     <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
                     <div className="w-2 h-2 rounded-full bg-zinc-800" />
@@ -438,7 +558,7 @@ export default function AuthorEditorTerminal() {
         {view === 'review_queue' && profile?.role === 'editor' && (
           <div className="p-16 h-full overflow-y-auto max-w-7xl mx-auto scrollbar-hide">
             <div className="flex justify-between items-baseline border-b border-white/5 pb-12 mb-16">
-              <h2 className="text-8xl font-serif font-bold italic text-white tracking-tighter">Review Queue</h2>
+              <h2 className="font-serif font-bold italic text-white tracking-tighter" style={{ fontSize: 'clamp(3rem, 10vw, 5rem)' }}>Review Queue</h2>
               <p className="text-zinc-600 font-black uppercase tracking-[0.4em] text-xs">Earn Credits • Verify IP</p>
             </div>
             
@@ -495,7 +615,7 @@ export default function AuthorEditorTerminal() {
           <div className="p-16 h-full flex flex-col animate-in zoom-in-95 duration-500">
             <header className="flex justify-between items-end mb-12">
               <div className="w-2/3">
-                <h2 className="text-6xl font-serif font-bold text-white mb-4">
+                <h2 className="font-serif font-bold text-white mb-4" style={{ fontSize: 'clamp(2rem, 6vw, 3.75rem)' }}>
                   {selectedReview.snippets?.title || 'Untitled Manuscript'}
                 </h2>
                 <div className="flex items-center gap-6">
@@ -567,7 +687,7 @@ export default function AuthorEditorTerminal() {
         {view === 'marketplace' && (
           <div className="p-16 h-full overflow-y-auto max-w-7xl mx-auto scrollbar-hide">
             <div className="flex justify-between items-baseline border-b border-white/5 pb-12 mb-16">
-              <h2 className="text-8xl font-serif font-bold italic text-white tracking-tighter">Exchange</h2>
+              <h2 className="font-serif font-bold italic text-white tracking-tighter" style={{ fontSize: 'clamp(3rem, 10vw, 5rem)' }}>Exchange</h2>
               <p className="text-zinc-600 font-black uppercase tracking-[0.4em] text-xs">Verified Assets Only</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
@@ -585,9 +705,13 @@ export default function AuthorEditorTerminal() {
                   <h4 className="text-3xl font-serif font-bold text-white mb-6 leading-tight">{item.title}</h4>
                   <p className="text-zinc-500 italic text-xl leading-relaxed mb-10 h-36 overflow-hidden border-t border-white/5 pt-6">"{item.preview_text}"</p>
                   <button className="w-full py-6 bg-white text-black rounded-3xl font-black uppercase text-xs tracking-[0.2em] hover:bg-red-600 hover:text-white transition-all shadow-xl">Acquire License</button>
-                  <div className="mt-6 flex justify-between px-4">
+                  <div className="mt-6 flex justify-between items-center px-4">
                     <span className="text-[9px] text-zinc-700 font-black uppercase tracking-widest">By {item.profiles?.full_name}</span>
-                    <span className="text-[9px] text-green-400 font-black uppercase tracking-widest">✓ Student-Verified IP</span>
+                    {item.verified_editor?.full_name ? (
+                      <span className="text-[9px] text-green-400 font-black uppercase tracking-widest">✓ Verified by {item.verified_editor.full_name}</span>
+                    ) : (
+                      <span className="text-[9px] text-green-400 font-black uppercase tracking-widest">✓ Student-Verified IP</span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -602,7 +726,7 @@ export default function AuthorEditorTerminal() {
             <div className="bg-zinc-900/50 p-16 rounded-[80px] border border-white/10 flex items-center gap-16 relative">
               <div className="w-48 h-48 bg-red-600 rounded-[50px] flex items-center justify-center text-8xl shadow-[0_0_60px_rgba(220,38,38,0.4)] rotate-2">👤</div>
               <div>
-                <h2 className="text-7xl font-serif font-bold text-white tracking-tighter mb-4 italic">{profile?.full_name || 'Member'}</h2>
+                <h2 className="font-serif font-bold text-white tracking-tighter mb-4 italic" style={{ fontSize: 'clamp(2.5rem, 8vw, 4.375rem)' }}>{profile?.full_name || 'Member'}</h2>
                 <div className="flex items-center gap-6">
                   <p className="text-zinc-500 font-mono text-xl uppercase tracking-widest">{user?.email}</p>
                   <span className="bg-white/5 text-red-600 px-4 py-1 rounded text-[10px] font-black uppercase tracking-widest border border-red-600/20">
@@ -705,7 +829,7 @@ export default function AuthorEditorTerminal() {
         {showAuth && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/98 backdrop-blur-3xl p-8">
             <div className="bg-[#080808] p-16 rounded-[100px] w-full max-w-2xl border border-white/5 text-center relative shadow-[0_0_100px_rgba(220,38,38,0.1)]">
-              <h2 className="text-7xl font-serif font-bold mb-10 italic text-white tracking-tighter">{isSignUp ? 'Create' : 'Entry'}</h2>
+              <h2 className="font-serif font-bold mb-10 italic text-white tracking-tighter" style={{ fontSize: 'clamp(2.5rem, 8vw, 4.375rem)' }}>{isSignUp ? 'Create' : 'Entry'}</h2>
               
               {isSignUp && (
                 <div className="flex gap-4 mb-10 justify-center">

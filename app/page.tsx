@@ -23,6 +23,7 @@ export default function AuthorEditorTerminal() {
   const [reviewContent, setReviewContent] = useState('');
   const [reviewNotes, setReviewNotes] = useState('');
   const [pendingReviews, setPendingReviews] = useState<any[]>([]); // Author's submitted reviews
+  const [newItemPulse, setNewItemPulse] = useState<string | null>(null); // Track newly arrived items for animation
   
   // --- REFINERY STATE ---
   const [selectedText, setSelectedText] = useState('');
@@ -58,6 +59,95 @@ export default function AuthorEditorTerminal() {
     });
     return () => authListener?.subscription.unsubscribe();
   }, []);
+
+  // --- REALTIME SUBSCRIPTION FOR REVIEW QUEUE (Students Only) ---
+  useEffect(() => {
+    // Only subscribe if user is a student editor
+    if (!user || profile?.role !== 'editor') return;
+
+    // Set up Realtime subscription for new review_queue entries
+    const channel = supabase
+      .channel('review_queue_realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'review_queue',
+          filter: 'status=eq.pending'
+        },
+        async (payload) => {
+          // New snippet extracted! Fetch full data with relations
+          const newReview = payload.new as any;
+          
+          // Fetch snippet and author data
+          const [snippetRes, authorRes] = await Promise.all([
+            supabase
+              .from('snippets')
+              .select('*, profiles!snippets_user_id_fkey(full_name)')
+              .eq('id', newReview.snippet_id)
+              .single(),
+            supabase
+              .from('profiles')
+              .select('full_name')
+              .eq('id', newReview.author_id)
+              .single()
+          ]);
+
+          if (snippetRes.data && authorRes.data) {
+            const enrichedReview = {
+              ...newReview,
+              snippets: snippetRes.data,
+              profiles: authorRes.data
+            };
+            
+            // Add to review queue (prepend for newest first, but we'll sort)
+            setReviewQueue(prev => {
+              const updated = [enrichedReview, ...prev];
+              // Sort by submitted_at ascending (oldest first)
+              return updated.sort((a, b) => 
+                new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime()
+              );
+            });
+            
+            // Trigger pulse animation for new item
+            setNewItemPulse(enrichedReview.id);
+            setTimeout(() => setNewItemPulse(null), 3000); // Remove pulse after 3 seconds
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'review_queue',
+          filter: 'status=eq.in_progress'
+        },
+        (payload) => {
+          // Review was claimed by another editor, remove from queue
+          setReviewQueue(prev => prev.filter(r => r.id !== payload.new.id));
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'review_queue',
+          filter: 'status=eq.approved'
+        },
+        (payload) => {
+          // Review was approved, remove from queue
+          setReviewQueue(prev => prev.filter(r => r.id !== payload.new.id));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, profile?.role]);
 
   async function loadUserCloudData(uid: string) {
     const [p, s, reviews] = await Promise.all([
@@ -558,14 +648,32 @@ export default function AuthorEditorTerminal() {
         {view === 'review_queue' && profile?.role === 'editor' && (
           <div className="p-16 h-full overflow-y-auto max-w-7xl mx-auto scrollbar-hide">
             <div className="flex justify-between items-baseline border-b border-white/5 pb-12 mb-16">
-              <h2 className="font-serif font-bold italic text-white tracking-tighter" style={{ fontSize: 'clamp(3rem, 10vw, 5rem)' }}>Review Queue</h2>
+              <div className="flex items-center gap-4">
+                <h2 className="font-serif font-bold italic text-white tracking-tighter" style={{ fontSize: 'clamp(3rem, 10vw, 5rem)' }}>Review Queue</h2>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Realtime Active" />
+                  <span className="text-[10px] font-mono text-green-500 uppercase tracking-widest">LIVE</span>
+                </div>
+              </div>
               <p className="text-zinc-600 font-black uppercase tracking-[0.4em] text-xs">Earn Credits • Verify IP</p>
             </div>
             
             {reviewQueue.length > 0 ? (
               <div className="grid grid-cols-1 gap-8">
                 {reviewQueue.map((review, i) => (
-                  <div key={i} className="bg-zinc-900/30 border border-white/5 p-12 rounded-[60px] hover:border-red-600/30 transition-all duration-500 group">
+                  <div 
+                    key={review.id || i} 
+                    className={`relative bg-zinc-900/30 border p-12 rounded-[60px] hover:border-red-600/30 transition-all duration-500 group ${
+                      newItemPulse === review.id 
+                        ? 'border-green-500/50 animate-pulse shadow-[0_0_30px_rgba(34,197,94,0.3)]' 
+                        : 'border-white/5'
+                    }`}
+                  >
+                    {newItemPulse === review.id && (
+                      <div className="absolute -top-2 -right-2 bg-green-500 text-white text-[8px] font-black px-2 py-1 rounded-full uppercase tracking-widest animate-bounce z-10">
+                        NEW
+                      </div>
+                    )}
                     <div className="flex justify-between items-start mb-8">
                       <div className="flex-1">
                         <h4 className="text-4xl font-serif font-bold text-white mb-4 leading-tight">

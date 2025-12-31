@@ -17,6 +17,13 @@ export default function AuthorEditorTerminal() {
   const [snippets, setSnippets] = useState<any[]>([]);
   const [marketItems, setMarketItems] = useState<any[]>([]);
   
+  // --- REVIEW BRIDGE STATE ---
+  const [reviewQueue, setReviewQueue] = useState<any[]>([]);
+  const [selectedReview, setSelectedReview] = useState<any>(null);
+  const [reviewContent, setReviewContent] = useState('');
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [pendingReviews, setPendingReviews] = useState<any[]>([]); // Author's submitted reviews
+  
   // --- EDITOR & COMMERCE STATE ---
   const [content, setContent] = useState('');
   const [title, setTitle] = useState('');
@@ -27,6 +34,7 @@ export default function AuthorEditorTerminal() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('author'); 
   const [isBusy, setIsBusy] = useState(false);
+  const [editingSnippetId, setEditingSnippetId] = useState<string | null>(null);
 
   // --- DATA LIFECYCLE ---
   useEffect(() => {
@@ -48,16 +56,52 @@ export default function AuthorEditorTerminal() {
   }, []);
 
   async function loadUserCloudData(uid: string) {
-    const [p, s] = await Promise.all([
+    const [p, s, reviews] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', uid).single(),
-      supabase.from('snippets').select('*').eq('user_id', uid).order('created_at', { ascending: false })
+      supabase.from('snippets').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
+      supabase.from('review_queue').select('*, snippets(*)').eq('author_id', uid).order('submitted_at', { ascending: false })
     ]);
     if (p.data) setProfile(p.data);
     if (s.data) setSnippets(s.data);
+    if (reviews.data) setPendingReviews(reviews.data);
+    
+    // Load review queue if user is a student editor
+    if (p.data?.role === 'editor') {
+      loadReviewQueue();
+    }
+  }
+
+  async function loadReviewQueue() {
+    const { data } = await supabase
+      .from('review_queue')
+      .select(`
+        *,
+        snippets(*, profiles!snippets_user_id_fkey(full_name))
+      `)
+      .eq('status', 'pending')
+      .order('submitted_at', { ascending: true });
+    
+    // Enrich with author profile data
+    if (data) {
+      const enrichedData = await Promise.all(data.map(async (review) => {
+        const { data: authorData } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', review.author_id)
+          .single();
+        return { ...review, profiles: authorData };
+      }));
+      setReviewQueue(enrichedData);
+    }
   }
 
   async function loadMarketRegistry() {
-    const { data } = await supabase.from('snippets').select('*, profiles(full_name)').eq('status', 'public');
+    const { data } = await supabase
+      .from('snippets')
+      .select('*, profiles(full_name)')
+      .eq('status', 'public')
+      .eq('verified', true)
+      .order('created_at', { ascending: false });
     if (data) setMarketItems(data);
   }
 
@@ -76,24 +120,215 @@ export default function AuthorEditorTerminal() {
     setIsBusy(false);
   };
 
+  // --- REVIEW BRIDGE ACTIONS ---
+  const saveDraft = async () => {
+    if (!user) return setShowAuth(true);
+    if (!title.trim() && !content.trim()) return;
+    
+    setIsBusy(true);
+    const snippetData: any = {
+      title: title || 'Untitled Draft',
+      content,
+      user_id: user.id,
+      status: 'draft',
+      verification_status: 'draft',
+      price: parseFloat(price) || 0,
+      preview_text: content.slice(0, 150) + (content.length > 150 ? "..." : ""),
+      verified: false
+    };
+
+    if (editingSnippetId) {
+      const { data, error } = await supabase
+        .from('snippets')
+        .update(snippetData)
+        .eq('id', editingSnippetId)
+        .select()
+        .single();
+      
+      if (data) {
+        setSnippets(snippets.map(s => s.id === editingSnippetId ? data : s));
+        setEditingSnippetId(null);
+      } else if (error) alert(error.message);
+    } else {
+      const { data, error } = await supabase.from('snippets').insert([snippetData]).select();
+      if (data) {
+        setSnippets([data[0], ...snippets]);
+        setEditingSnippetId(data[0].id);
+      } else if (error) alert(error.message);
+    }
+    setIsBusy(false);
+  };
+
+  const submitForReview = async (snippetId: string) => {
+    if (!user) return;
+    setIsBusy(true);
+    
+    // Update snippet to pending_review status
+    const { error: snippetError } = await supabase
+      .from('snippets')
+      .update({ verification_status: 'pending_review' })
+      .eq('id', snippetId);
+    
+    if (snippetError) {
+      alert(snippetError.message);
+      setIsBusy(false);
+      return;
+    }
+    
+    // Create review_queue entry
+    const { data, error } = await supabase
+      .from('review_queue')
+      .insert([{
+        snippet_id: snippetId,
+        author_id: user.id,
+        status: 'pending'
+      }])
+      .select('*, snippets(*)')
+      .single();
+    
+    if (data) {
+      setPendingReviews([data, ...pendingReviews]);
+      setSnippets(snippets.map(s => s.id === snippetId ? { ...s, verification_status: 'pending_review' } : s));
+      // Reload review queue for editors
+      if (profile?.role === 'editor') {
+        loadReviewQueue();
+      }
+      alert('Manuscript submitted for review. Student editors will verify your work.');
+    } else if (error) alert(error.message);
+    setIsBusy(false);
+  };
+
+  const claimReview = async (reviewId: string) => {
+    if (!user) return;
+    setIsBusy(true);
+    
+    const { data: reviewData, error } = await supabase
+      .from('review_queue')
+      .update({ 
+        editor_id: user.id, 
+        status: 'in_progress' 
+      })
+      .eq('id', reviewId)
+      .select('*, snippets(*)')
+      .single();
+    
+    if (reviewData) {
+      // Fetch author profile
+      const { data: authorData } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', reviewData.author_id)
+        .single();
+      
+      const enrichedReview = { ...reviewData, profiles: authorData };
+      setSelectedReview(enrichedReview);
+      setReviewContent(reviewData.snippets?.content || '');
+      setReviewNotes('');
+      setReviewQueue(reviewQueue.filter(r => r.id !== reviewId));
+      setView('review_terminal');
+      
+      // Update snippet status
+      await supabase
+        .from('snippets')
+        .update({ verification_status: 'in_review' })
+        .eq('id', reviewData.snippet_id);
+    } else if (error) alert(error.message);
+    setIsBusy(false);
+  };
+
+  const approveReview = async () => {
+    if (!selectedReview || !user) return;
+    setIsBusy(true);
+    
+    const { error } = await supabase
+      .from('review_queue')
+      .update({
+        status: 'approved',
+        reviewed_at: new Date().toISOString(),
+        editor_notes: reviewNotes,
+        edited_content: reviewContent !== selectedReview.snippets?.content ? reviewContent : null
+      })
+      .eq('id', selectedReview.id);
+    
+    if (!error) {
+      // Update snippet content if edited
+      if (reviewContent !== selectedReview.snippets?.content) {
+        await supabase
+          .from('snippets')
+          .update({ content: reviewContent })
+          .eq('id', selectedReview.snippet_id);
+      }
+      
+      // Credit and verification are handled by database trigger
+      // Reload data
+      await loadUserCloudData(user.id);
+      await loadMarketRegistry();
+      setSelectedReview(null);
+      setReviewContent('');
+      setReviewNotes('');
+      setView(profile?.role === 'editor' ? 'review_queue' : 'profile');
+      alert('Review approved! Author receives verified badge. You earned +1 Credit.');
+    } else {
+      alert(error.message);
+    }
+    setIsBusy(false);
+  };
+
+  const rejectReview = async () => {
+    if (!selectedReview || !user) return;
+    if (!reviewNotes.trim()) {
+      alert('Please provide rejection notes for the author.');
+      return;
+    }
+    setIsBusy(true);
+    
+    const { error } = await supabase
+      .from('review_queue')
+      .update({
+        status: 'rejected',
+        reviewed_at: new Date().toISOString(),
+        editor_notes: reviewNotes
+      })
+      .eq('id', selectedReview.id);
+    
+    if (!error) {
+      // Update snippet status back to draft
+      await supabase
+        .from('snippets')
+        .update({ verification_status: 'draft' })
+        .eq('id', selectedReview.snippet_id);
+      
+      await loadUserCloudData(user.id);
+      setSelectedReview(null);
+      setReviewContent('');
+      setReviewNotes('');
+      setView(profile?.role === 'editor' ? 'review_queue' : 'profile');
+      alert('Review rejected. Author has been notified with your notes.');
+    } else {
+      alert(error.message);
+    }
+    setIsBusy(false);
+  };
+
   const commitAssetToMarket = async () => {
     if (!user) return setShowAuth(true);
     setIsBusy(true);
-    const { data, error } = await supabase.from('snippets').insert([{
-      title: title || 'New Protocol',
-      content,
-      user_id: user.id,
-      status: 'public',
-      price: parseFloat(price),
-      preview_text: content.slice(0, 150) + "..."
-    }]).select();
     
-    if (data) {
-      setSnippets([data[0], ...snippets]);
-      loadMarketRegistry();
-      setView('marketplace');
-      setContent(''); setTitle('');
-    } else alert(error.message);
+    // First save as draft, then submit for review
+    if (!editingSnippetId) {
+      await saveDraft();
+      // Small delay to ensure draft is saved
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    const targetId = editingSnippetId || snippets[0]?.id;
+    if (targetId) {
+      await submitForReview(targetId);
+      setContent('');
+      setTitle('');
+      setEditingSnippetId(null);
+      setView('profile');
+    }
     setIsBusy(false);
   };
 
@@ -113,6 +348,9 @@ export default function AuthorEditorTerminal() {
         <div onClick={() => setView('landing')} className="text-3xl font-serif font-black text-red-600 cursor-pointer hover:rotate-90 transition-transform duration-500">S.</div>
         <nav className="flex flex-col gap-10 text-2xl">
           <button onClick={() => setView('write')} className={view === 'write' ? 'text-red-600' : 'text-zinc-800 hover:text-white transition'}>✍️</button>
+          {profile?.role === 'editor' && (
+            <button onClick={() => { loadReviewQueue(); setView('review_queue'); }} className={view === 'review_queue' ? 'text-red-600' : 'text-zinc-800 hover:text-white transition'} title="Review Queue">📋</button>
+          )}
           <button onClick={() => setView('marketplace')} className={view === 'marketplace' ? 'text-red-600' : 'text-zinc-800 hover:text-white transition'}>🛍️</button>
           <button onClick={() => setView('profile')} className={view === 'profile' ? 'text-red-600' : 'text-zinc-800 hover:text-white transition'}>👤</button>
         </nav>
@@ -167,9 +405,14 @@ export default function AuthorEditorTerminal() {
                   <span className="text-zinc-600 font-mono text-2xl">$</span>
                   <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="bg-transparent outline-none font-mono text-2xl text-white w-24" />
                 </div>
-                <button onClick={commitAssetToMarket} disabled={isBusy} className="px-12 py-5 bg-red-600 text-white rounded-full font-black text-lg uppercase tracking-widest shadow-xl hover:bg-white hover:text-black transition-all">
-                  {isBusy ? 'Pushing...' : 'Publish IP'}
-                </button>
+                <div className="flex gap-4">
+                  <button onClick={saveDraft} disabled={isBusy} className="px-8 py-5 bg-zinc-900/50 text-zinc-400 rounded-full font-black text-sm uppercase tracking-widest border border-white/5 hover:bg-zinc-800 hover:text-white transition-all">
+                    {isBusy ? 'Saving...' : 'Save Draft'}
+                  </button>
+                  <button onClick={commitAssetToMarket} disabled={isBusy || (!title.trim() && !content.trim())} className="px-12 py-5 bg-red-600 text-white rounded-full font-black text-lg uppercase tracking-widest shadow-xl hover:bg-white hover:text-black transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    {isBusy ? 'Submitting...' : 'Submit for Review'}
+                  </button>
+                </div>
               </div>
             </header>
             
@@ -191,6 +434,135 @@ export default function AuthorEditorTerminal() {
           </div>
         )}
 
+        {/* VIEW: REVIEW QUEUE (Student Editor View) */}
+        {view === 'review_queue' && profile?.role === 'editor' && (
+          <div className="p-16 h-full overflow-y-auto max-w-7xl mx-auto scrollbar-hide">
+            <div className="flex justify-between items-baseline border-b border-white/5 pb-12 mb-16">
+              <h2 className="text-8xl font-serif font-bold italic text-white tracking-tighter">Review Queue</h2>
+              <p className="text-zinc-600 font-black uppercase tracking-[0.4em] text-xs">Earn Credits • Verify IP</p>
+            </div>
+            
+            {reviewQueue.length > 0 ? (
+              <div className="grid grid-cols-1 gap-8">
+                {reviewQueue.map((review, i) => (
+                  <div key={i} className="bg-zinc-900/30 border border-white/5 p-12 rounded-[60px] hover:border-red-600/30 transition-all duration-500 group">
+                    <div className="flex justify-between items-start mb-8">
+                      <div className="flex-1">
+                        <h4 className="text-4xl font-serif font-bold text-white mb-4 leading-tight">
+                          {review.snippets?.title || 'Untitled Manuscript'}
+                        </h4>
+                        <div className="flex items-center gap-6 mb-6">
+                          <span className="bg-red-600/10 text-red-600 text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest">
+                            Protocol {review.snippets?.id?.slice(0, 4) || 'N/A'}
+                          </span>
+                          <span className="text-zinc-500 text-sm font-mono uppercase tracking-widest">
+                            By {review.profiles?.full_name || 'Author'}
+                          </span>
+                          <span className="text-zinc-700 text-xs font-black uppercase tracking-widest">
+                            ${review.snippets?.price || '0.00'}
+                          </span>
+                        </div>
+                        <p className="text-zinc-500 italic text-xl leading-relaxed mb-8 border-l-4 border-red-600/20 pl-6">
+                          "{review.snippets?.preview_text || review.snippets?.content?.slice(0, 150) + '...'}"
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-8 border-t border-white/5">
+                      <span className="text-[10px] font-mono text-zinc-700 uppercase tracking-widest">
+                        Submitted {new Date(review.submitted_at).toLocaleDateString()}
+                      </span>
+                      <button 
+                        onClick={() => claimReview(review.id)} 
+                        className="px-10 py-5 bg-red-600 text-white rounded-full font-black text-sm uppercase tracking-widest shadow-xl hover:bg-white hover:text-black transition-all"
+                      >
+                        Claim Review (+1 Credit)
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-32 text-center border-2 border-dashed border-white/5 rounded-[60px]">
+                <p className="text-4xl font-serif italic text-zinc-800 mb-4">Review Queue Empty</p>
+                <p className="text-xl text-zinc-700">No pending manuscripts awaiting verification.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* VIEW: REVIEW TERMINAL (Student Editor Review Interface) */}
+        {view === 'review_terminal' && selectedReview && profile?.role === 'editor' && (
+          <div className="p-16 h-full flex flex-col animate-in zoom-in-95 duration-500">
+            <header className="flex justify-between items-end mb-12">
+              <div className="w-2/3">
+                <h2 className="text-6xl font-serif font-bold text-white mb-4">
+                  {selectedReview.snippets?.title || 'Untitled Manuscript'}
+                </h2>
+                <div className="flex items-center gap-6">
+                  <span className="bg-red-600/10 text-red-600 text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest">
+                    Reviewing Protocol {selectedReview.snippets?.id?.slice(0, 4)}
+                  </span>
+                  <span className="text-zinc-500 text-sm font-mono uppercase tracking-widest">
+                    Author: {selectedReview.profiles?.full_name}
+                  </span>
+                </div>
+              </div>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => { setSelectedReview(null); setView('review_queue'); }}
+                  className="px-8 py-5 bg-zinc-900/50 text-zinc-400 rounded-full font-black text-sm uppercase tracking-widest border border-white/5 hover:bg-zinc-800 hover:text-white transition-all"
+                >
+                  ← Back
+                </button>
+                <button 
+                  onClick={rejectReview} 
+                  disabled={isBusy}
+                  className="px-10 py-5 bg-zinc-900/50 text-zinc-400 rounded-full font-black text-sm uppercase tracking-widest border border-white/5 hover:bg-red-600/20 hover:text-red-600 hover:border-red-600/50 transition-all disabled:opacity-50"
+                >
+                  Reject
+                </button>
+                <button 
+                  onClick={approveReview} 
+                  disabled={isBusy}
+                  className="px-12 py-5 bg-red-600 text-white rounded-full font-black text-lg uppercase tracking-widest shadow-xl hover:bg-white hover:text-black transition-all disabled:opacity-50"
+                >
+                  {isBusy ? 'Processing...' : 'Approve (+1 Credit)'}
+                </button>
+              </div>
+            </header>
+            
+            <div className="flex-1 bg-zinc-900/20 rounded-[60px] border border-white/5 p-12 relative shadow-inner overflow-hidden mb-8">
+              <textarea 
+                value={reviewContent} 
+                onChange={(e) => setReviewContent(e.target.value)} 
+                placeholder="Edit and verify the manuscript content..."
+                className="w-full h-full bg-transparent outline-none text-4xl font-serif leading-relaxed text-zinc-300 placeholder:text-zinc-900 resize-none scrollbar-hide"
+              />
+              <div className="absolute bottom-10 right-16 flex items-center gap-6">
+                <div className="flex gap-2">
+                  <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+                  <div className="w-2 h-2 rounded-full bg-zinc-800" />
+                </div>
+                <span className="text-[10px] font-mono text-zinc-700 uppercase tracking-[0.3em]">
+                  Words: {reviewContent.split(/\s+/).filter(Boolean).length}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-zinc-900/30 rounded-[40px] border border-white/5 p-8">
+              <label className="block text-white text-sm font-black uppercase tracking-widest mb-4">
+                Editor Notes {selectedReview.status === 'in_progress' && '(Required for rejection)'}
+              </label>
+              <textarea
+                value={reviewNotes}
+                onChange={(e) => setReviewNotes(e.target.value)}
+                placeholder="Add notes, suggestions, or rejection reasons..."
+                className="w-full h-32 bg-black/50 border border-white/10 rounded-[30px] p-6 text-white outline-none focus:border-red-600 text-lg font-serif resize-none"
+              />
+            </div>
+          </div>
+        )}
+
         {/* VIEW: MARKETPLACE */}
         {view === 'marketplace' && (
           <div className="p-16 h-full overflow-y-auto max-w-7xl mx-auto scrollbar-hide">
@@ -202,7 +574,12 @@ export default function AuthorEditorTerminal() {
               {marketItems.map((item, i) => (
                 <div key={i} className="bg-zinc-900/30 border border-white/5 p-12 rounded-[60px] hover:border-red-600/30 transition-all duration-500 group relative">
                   <div className="flex justify-between items-start mb-8">
-                    <span className="bg-red-600/10 text-red-600 text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest">Protocol {item.id.slice(0,4)}</span>
+                    <div className="flex gap-3 items-center">
+                      <span className="bg-red-600/10 text-red-600 text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest">Protocol {item.id.slice(0,4)}</span>
+                      {item.verified && (
+                        <span className="bg-green-600/20 text-green-400 text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest border border-green-600/30">✓ Verified</span>
+                      )}
+                    </div>
                     <span className="text-4xl font-mono font-bold text-white tracking-tighter">${item.price}</span>
                   </div>
                   <h4 className="text-3xl font-serif font-bold text-white mb-6 leading-tight">{item.title}</h4>
@@ -210,7 +587,7 @@ export default function AuthorEditorTerminal() {
                   <button className="w-full py-6 bg-white text-black rounded-3xl font-black uppercase text-xs tracking-[0.2em] hover:bg-red-600 hover:text-white transition-all shadow-xl">Acquire License</button>
                   <div className="mt-6 flex justify-between px-4">
                     <span className="text-[9px] text-zinc-700 font-black uppercase tracking-widest">By {item.profiles?.full_name}</span>
-                    <span className="text-[9px] text-zinc-700 font-black uppercase tracking-widest">Verified IP</span>
+                    <span className="text-[9px] text-green-400 font-black uppercase tracking-widest">✓ Student-Verified IP</span>
                   </div>
                 </div>
               ))}
@@ -254,21 +631,67 @@ export default function AuthorEditorTerminal() {
                 <span className="text-[10px] font-black text-zinc-700 uppercase tracking-widest italic underline">Manage All Assets</span>
               </div>
               <div className="grid grid-cols-1 gap-6">
-                {snippets.length > 0 ? snippets.map((s, i) => (
-                  <div key={i} className="flex justify-between items-center p-8 bg-black/40 rounded-[40px] border border-white/5 hover:border-red-600/40 transition-all group">
-                    <div className="flex items-center gap-8">
-                      <div className="w-12 h-12 rounded-2xl bg-zinc-900 flex items-center justify-center text-xl text-zinc-600">📄</div>
-                      <div>
-                        <p className="text-2xl font-bold text-white mb-1">{s.title}</p>
-                        <p className="text-[10px] font-mono text-zinc-700 uppercase tracking-widest italic">{new Date(s.created_at).toDateString()}</p>
+                {snippets.length > 0 ? snippets.map((s, i) => {
+                  const reviewStatus = pendingReviews.find(r => r.snippet_id === s.id);
+                  const getStatusBadge = () => {
+                    if (s.verified) return { text: '✓ Verified', color: 'bg-green-600/20 text-green-400 border-green-600/30' };
+                    if (reviewStatus?.status === 'approved') return { text: 'Approved', color: 'bg-green-600/10 text-green-500 border-green-600/20' };
+                    if (reviewStatus?.status === 'rejected') return { text: 'Rejected', color: 'bg-red-600/10 text-red-500 border-red-600/20' };
+                    if (reviewStatus?.status === 'in_progress') return { text: 'In Review', color: 'bg-yellow-600/10 text-yellow-500 border-yellow-600/20' };
+                    if (reviewStatus?.status === 'pending' || s.verification_status === 'pending_review') return { text: 'Pending Review', color: 'bg-blue-600/10 text-blue-500 border-blue-600/20' };
+                    return { text: 'Draft', color: 'bg-zinc-900/50 text-zinc-600 border-white/10' };
+                  };
+                  const status = getStatusBadge();
+                  
+                  return (
+                    <div key={i} className="flex justify-between items-center p-8 bg-black/40 rounded-[40px] border border-white/5 hover:border-red-600/40 transition-all group">
+                      <div className="flex items-center gap-8 flex-1">
+                        <div className="w-12 h-12 rounded-2xl bg-zinc-900 flex items-center justify-center text-xl text-zinc-600">📄</div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-4 mb-2">
+                            <p className="text-2xl font-bold text-white">{s.title}</p>
+                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${status.color}`}>
+                              {status.text}
+                            </span>
+                          </div>
+                          <p className="text-[10px] font-mono text-zinc-700 uppercase tracking-widest italic">{new Date(s.created_at).toDateString()}</p>
+                          {reviewStatus?.editor_notes && (
+                            <p className="text-xs text-zinc-600 italic mt-2 max-w-md">{reviewStatus.editor_notes}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-4">
+                        {!s.verified && s.verification_status === 'draft' && (
+                          <button 
+                            onClick={() => {
+                              setEditingSnippetId(s.id);
+                              setTitle(s.title);
+                              setContent(s.content);
+                              setPrice(s.price?.toString() || '49.99');
+                              setView('write');
+                            }}
+                            className="px-6 py-3 bg-zinc-900 text-zinc-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:text-white transition"
+                          >
+                            Edit
+                          </button>
+                        )}
+                        {!s.verified && (s.verification_status === 'draft' || !s.verification_status) && (
+                          <button 
+                            onClick={() => submitForReview(s.id)}
+                            className="px-6 py-3 bg-red-600/20 text-red-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition border border-red-600/30"
+                          >
+                            Submit for Review
+                          </button>
+                        )}
+                        {s.verified && (
+                          <span className="px-6 py-3 bg-green-600/20 text-green-400 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-green-600/30">
+                            Listed in Exchange
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className="flex gap-4">
-                      <button className="px-6 py-3 bg-zinc-900 text-zinc-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:text-white transition">Preview</button>
-                      <button className="px-6 py-3 bg-white text-black rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition">Edit</button>
-                    </div>
-                  </div>
-                )) : (
+                  );
+                }) : (
                   <div className="py-24 text-center border-2 border-dashed border-white/5 rounded-[40px]">
                     <p className="text-2xl font-serif italic text-zinc-800">No assets currently secured in cloud vault.</p>
                   </div>

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { Layers, Sparkles, ShieldCheck } from 'lucide-react';
 
 // --- DATABASE CORE ---
 const supabase = createClient(
@@ -374,31 +375,41 @@ export default function AuthorEditorTerminal() {
 
   // --- REFINERY ACTIONS ---
   const handleTextSelection = () => {
-    const textarea = document.querySelector('textarea[placeholder*="Initialize your text"]') as HTMLTextAreaElement;
-    if (textarea) {
-      const selected = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
-      setSelectedText(selected);
+    // Use window.getSelection() for better cross-browser support
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim()) {
+      setSelectedText(selection.toString());
+    } else {
+      // Fallback to textarea selection
+      const textarea = document.querySelector('textarea[placeholder*="Initialize your text"]') as HTMLTextAreaElement;
+      if (textarea) {
+        const selected = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+        setSelectedText(selected);
+      }
     }
   };
 
   const extractToReview = async () => {
-    if (!selectedText.trim() || !user) {
-      alert('Please select text to extract.');
+    // Get selected text or use entire content if nothing selected
+    const textToExtract = selectedText.trim() || content.trim();
+    
+    if (!textToExtract || !user) {
+      alert('Please select text to extract or ensure content exists.');
       return;
     }
     setIsBusy(true);
     
-    // Create a new snippet from selected text
+    // Create a new snippet from selected text with status 'in_review'
     const { data: snippetData, error: snippetError } = await supabase
       .from('snippets')
       .insert([{
         title: `Extracted: ${title || 'Untitled'}`,
-        content: selectedText,
+        content: textToExtract,
         user_id: user.id,
-        status: 'draft',
-        verification_status: 'draft',
+        status: 'in_review', // Direct to in_review as per spec
+        verification_status: 'pending_review',
         price: parseFloat(price) || 0,
-        preview_text: selectedText.slice(0, 150) + (selectedText.length > 150 ? "..." : ""),
+        preview_text: textToExtract.slice(0, 150) + (textToExtract.length > 150 ? "..." : ""),
         verified: false
       }])
       .select()
@@ -440,32 +451,39 @@ export default function AuthorEditorTerminal() {
     setIsBusy(false);
   };
 
-  const refineWithAI = async () => {
+  const refineIPBlock = async () => {
     if (!content.trim()) {
       alert('Please write some content first.');
       return;
     }
     setIsRefining(true);
     
-    try {
-      const response = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: content, mode: 'refine' })
-      });
-      
-      const data = await response.json();
-      if (data.refined) {
-        setContent(data.refined);
-        alert('Content professionalized! Review and adjust as needed.');
-      } else {
-        alert('Refinement failed. Please try again.');
+    // Mock API call with 2-second timeout as per spec
+    setTimeout(async () => {
+      try {
+        const response = await fetch('/api/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            text: content, 
+            mode: 'refine',
+            prompt: 'Rewrite this intellectual property to sound like an executive legal document.'
+          })
+        });
+        
+        const data = await response.json();
+        if (data.refined) {
+          setContent(data.refined);
+          alert('Content professionalized! Review and adjust as needed.');
+        } else {
+          alert('Refinement failed. Please try again.');
+        }
+      } catch (error) {
+        alert('Error refining content. Please try again.');
+      } finally {
+        setIsRefining(false);
       }
-    } catch (error) {
-      alert('Error refining content. Please try again.');
-    } finally {
-      setIsRefining(false);
-    }
+    }, 2000);
   };
 
   const rejectReview = async () => {
@@ -603,8 +621,9 @@ export default function AuthorEditorTerminal() {
                   <button onClick={saveDraft} disabled={isBusy} className="px-8 py-5 bg-zinc-900/50 text-zinc-400 rounded-full font-black text-sm uppercase tracking-widest border border-white/5 hover:bg-zinc-800 hover:text-white transition-all">
                     {isBusy ? 'Saving...' : 'Save Draft'}
                   </button>
-                  <button onClick={refineWithAI} disabled={isRefining || !content.trim()} className="px-8 py-5 bg-purple-600/20 text-purple-400 rounded-full font-black text-sm uppercase tracking-widest border border-purple-600/30 hover:bg-purple-600 hover:text-white transition-all disabled:opacity-50">
-                    {isRefining ? 'Refining...' : 'Refine'}
+                  <button onClick={refineIPBlock} disabled={isRefining || !content.trim()} className="px-8 py-5 bg-purple-600/20 text-purple-400 rounded-full font-black text-sm uppercase tracking-widest border border-purple-600/30 hover:bg-purple-600 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2">
+                    <Sparkles size={16} className={isRefining ? 'animate-pulse' : ''} />
+                    {isRefining ? 'Thinking...' : 'Refine'}
                   </button>
                   <button onClick={commitAssetToMarket} disabled={isBusy || (!title.trim() && !content.trim())} className="px-12 py-5 bg-red-600 text-white rounded-full font-black text-lg uppercase tracking-widest shadow-xl hover:bg-white hover:text-black transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                     {isBusy ? 'Submitting...' : 'Submit for Review'}
@@ -613,7 +632,11 @@ export default function AuthorEditorTerminal() {
               </div>
             </header>
             
-            <div className="flex-1 bg-zinc-900/20 rounded-[60px] border border-white/5 p-12 relative shadow-inner overflow-hidden">
+            <div className={`flex-1 bg-zinc-900/20 rounded-[60px] border p-12 relative shadow-inner overflow-hidden transition-all duration-500 ${
+              isRefining 
+                ? 'border-purple-500/50 shadow-[0_0_40px_rgba(168,85,247,0.4)] animate-pulse' 
+                : 'border-white/5'
+            }`}>
                <textarea 
                   value={content} 
                   onChange={(e) => setContent(e.target.value)}
@@ -621,18 +644,19 @@ export default function AuthorEditorTerminal() {
                   onKeyUp={handleTextSelection}
                   onSelect={handleTextSelection}
                   placeholder="Initialize your text... Students earn credits for reviewing this."
-                  className="w-full h-full bg-transparent outline-none text-4xl font-serif leading-relaxed text-zinc-300 placeholder:text-zinc-900 resize-none scrollbar-hide"
+                  className="w-full h-full bg-transparent outline-none text-4xl leading-relaxed text-zinc-300 placeholder:text-zinc-900 resize-none scrollbar-hide"
+                  style={{ fontFamily: "var(--font-playfair), 'Georgia', serif" }}
                />
                <div className="absolute bottom-10 right-16 flex items-center gap-6">
-                  {selectedText.trim() && (
-                    <button
-                      onClick={extractToReview}
-                      disabled={isBusy}
-                      className="px-6 py-3 bg-blue-600/20 text-blue-400 rounded-full font-black text-xs uppercase tracking-widest border border-blue-600/30 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50"
-                    >
-                      Extract to Review
-                    </button>
-                  )}
+                  <button
+                    onClick={extractToReview}
+                    disabled={isBusy}
+                    className="px-6 py-3 bg-blue-600/20 text-blue-400 rounded-full font-black text-xs uppercase tracking-widest border border-blue-600/30 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
+                    title={selectedText.trim() ? 'Extract selected text' : 'Extract all content'}
+                  >
+                    <Layers size={14} />
+                    Extract to Review
+                  </button>
                   <div className="flex gap-2">
                     <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
                     <div className="w-2 h-2 rounded-full bg-zinc-800" />
@@ -805,7 +829,10 @@ export default function AuthorEditorTerminal() {
                     <div className="flex gap-3 items-center">
                       <span className="bg-red-600/10 text-red-600 text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest">Protocol {item.id.slice(0,4)}</span>
                       {item.verified && (
-                        <span className="bg-green-600/20 text-green-400 text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest border border-green-600/30">✓ Verified</span>
+                        <span className="bg-green-600/10 text-green-400 text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest border border-green-500/40 flex items-center gap-1.5 shadow-sm">
+                          <ShieldCheck size={12} className="text-green-400" />
+                          Verified IP
+                        </span>
                       )}
                     </div>
                     <span className="text-4xl font-mono font-bold text-white tracking-tighter">${item.price}</span>

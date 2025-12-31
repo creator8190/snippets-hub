@@ -23,29 +23,19 @@ export default function SnippetsHub() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchSnippets(session.user.id);
-      }
+      if (session?.user) fetchSnippets(session.user.id);
     });
   }, []);
 
   async function fetchSnippets(userId: string) {
     const { data } = await supabase.from('snippets').select('*').order('created_at', { ascending: false });
-    if (data) {
-      setSnippets(data);
-    }
+    if (data) setSnippets(data);
   }
 
   const handleLogin = async () => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) { 
-      alert(error.message); 
-    } else { 
-      setUser(data.user); 
-      setShowAuth(false); 
-      fetchSnippets(data.user.id); 
-      setView('hub'); 
-    }
+    if (error) { alert(error.message); } 
+    else { setUser(data.user); setShowAuth(false); fetchSnippets(data.user.id); setView('hub'); }
   };
 
   const handleLogout = async () => {
@@ -58,12 +48,8 @@ export default function SnippetsHub() {
     if (!textToSave.trim()) return;
     setIsSaving(true);
     const { data, error } = await supabase.from('snippets').insert([{ content: textToSave, user_id: user?.id }]).select();
-    if (error) { 
-      alert("Save failed: " + error.message); 
-    } else if (data) { 
-      setSnippets([data[0], ...snippets]); 
-      alert("Snippet secured in Hub."); 
-    }
+    if (error) { alert("Save failed: " + error.message); } 
+    else if (data) { setSnippets([data[0], ...snippets]); alert("Snippet secured."); }
     setIsSaving(false);
   };
 
@@ -71,11 +57,8 @@ export default function SnippetsHub() {
     const textarea = textareaRef.current;
     if (!textarea) return;
     const selectedText = content.substring(textarea.selectionStart, textarea.selectionEnd);
-    if (selectedText) {
-      saveToDatabase(selectedText);
-    } else {
-      alert("Highlight text first to 'Snip' it!");
-    }
+    if (selectedText) saveToDatabase(selectedText);
+    else alert("Highlight text first!");
   };
 
   const handleAiPolish = async () => {
@@ -85,43 +68,51 @@ export default function SnippetsHub() {
       const res = await fetch('/api/ai', { method: 'POST', body: JSON.stringify({ text: content }) });
       const data = await res.json();
       setContent(prev => prev + "\n\n" + data.suggestion);
-    } catch (err) { 
-      console.error(err); 
-    } finally { 
-      setIsAiLoading(false); 
-    }
+    } catch (err) { console.error(err); } finally { setIsAiLoading(false); }
   };
 
   return (
-    <div className="flex min-h-screen bg-[#f4f1ea] text-[#1a1a1a] font-sans">
-      <aside className="w-20 bg-white border-r border-slate-200 flex flex-col items-center py-8 gap-10 sticky top-0 h-screen z-50">
-        <div className="text-2xl font-serif font-black text-red-700 cursor-pointer" onClick={() => setView('landing')}>S.</div>
-        <nav className="flex flex-col gap-8 flex-1 text-xl text-slate-400">
-          <button onClick={() => setView('hub')} className={view === 'hub' ? 'text-red-600' : 'hover:text-red-600'}>🏛️</button>
-          <button onClick={() => setView('write')} className={view === 'write' ? 'text-red-600' : 'hover:text-red-600'}>✍️</button>
-          <button onClick={() => setView('profile')} className={view === 'profile' ? 'text-slate-900' : 'hover:text-red-600'}>👤</button>
+    <div className="flex min-h-screen bg-[#0f172a] text-slate-100 font-sans selection:bg-red-500/30">
+      {/* Background Decor */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-red-900/20 blur-[120px] rounded-full" />
+        <div className="absolute top-[20%] -right-[10%] w-[30%] h-[50%] bg-blue-900/10 blur-[120px] rounded-full" />
+      </div>
+
+      <aside className="w-20 bg-black/40 backdrop-blur-xl border-r border-white/10 flex flex-col items-center py-8 gap-10 sticky top-0 h-screen z-50">
+        <div className="text-2xl font-serif font-black text-red-600 cursor-pointer hover:scale-110 transition" onClick={() => setView('landing')}>S.</div>
+        <nav className="flex flex-col gap-10 flex-1 text-xl text-slate-500">
+          <button onClick={() => setView('hub')} className={view === 'hub' ? 'text-white' : 'hover:text-red-500 transition'}>🏛️</button>
+          <button onClick={() => setView('write')} className={view === 'write' ? 'text-red-500' : 'hover:text-red-500 transition'}>✍️</button>
+          <button onClick={() => setView('profile')} className={view === 'profile' ? 'text-white' : 'hover:text-red-500 transition'}>👤</button>
         </nav>
       </aside>
 
-      <main className="flex-1 p-12">
+      <main className="flex-1 p-12 relative z-10">
         {view === 'landing' && (
-          <div className="max-w-4xl mx-auto text-center py-20 space-y-8">
-            <h1 className="text-8xl font-serif font-bold tracking-tighter leading-tight">Write. Protect. <span className="text-red-600 underline">Earn.</span></h1>
-            <div className="flex justify-center gap-4">
-              <button onClick={() => setView('write')} className="px-10 py-4 bg-black text-white rounded-full font-bold">Open Drafting Room</button>
-              {!user && <button onClick={() => setShowAuth(true)} className="px-10 py-4 border border-slate-300 rounded-full font-bold">Secure Login</button>}
+          <div className="max-w-4xl mx-auto text-center py-32 space-y-10">
+            <h1 className="text-9xl font-serif font-bold tracking-tighter leading-[0.8] text-white">
+              The <span className="text-red-600">Vault</span> <br/> of Words.
+            </h1>
+            <p className="text-xl text-slate-400 max-w-xl mx-auto font-light leading-relaxed">Secure your intellectual property in a high-fidelity drafting environment.</p>
+            <div className="flex justify-center gap-6">
+              <button onClick={() => setView('write')} className="px-12 py-5 bg-white text-black rounded-full font-black hover:bg-red-600 hover:text-white transition-all duration-300">Start Drafting</button>
+              {!user && <button onClick={() => setShowAuth(true)} className="px-12 py-5 border border-white/20 rounded-full font-bold hover:bg-white/5 transition">Secure Access</button>}
             </div>
           </div>
         )}
 
         {view === 'hub' && (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <h2 className="text-3xl font-serif font-bold italic">Secured Snippets Hub</h2>
-            <div className="grid gap-4">
-              {snippets.length === 0 ? <p className="text-slate-400">No snippets secured yet.</p> : snippets.map((s, i) => (
-                <div key={i} className="p-6 bg-white rounded-2xl shadow-sm border border-slate-100">
-                  <p className="text-slate-600 italic">"{s.content}"</p>
-                  <div className="mt-4 text-[10px] uppercase font-bold text-red-600 tracking-widest">Property of {user?.email}</div>
+          <div className="max-w-4xl mx-auto space-y-8">
+            <h2 className="text-4xl font-serif font-bold text-white">Your Secured Assets</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {snippets.map((s, i) => (
+                <div key={i} className="p-8 bg-white/5 backdrop-blur-md rounded-[32px] border border-white/10 hover:border-red-600/50 transition-all group">
+                  <p className="text-slate-300 italic leading-relaxed">"{s.content}"</p>
+                  <div className="mt-6 flex justify-between items-center">
+                    <span className="text-[10px] uppercase font-black text-red-600 tracking-[0.2em]">Verified Asset</span>
+                    <span className="text-[10px] text-slate-500">ID: {s.id.toString().slice(-4)}</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -129,15 +120,22 @@ export default function SnippetsHub() {
         )}
 
         {view === 'write' && (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <h2 className="text-3xl font-serif font-bold italic text-center">Drafting Room</h2>
-            <div className="bg-white/80 backdrop-blur shadow-2xl rounded-[40px] p-12 min-h-[500px] relative border border-white">
-              <textarea ref={textareaRef} value={content} onChange={(e) => setContent(e.target.value)} placeholder="Write here..." className="w-full h-[350px] bg-transparent outline-none text-xl leading-relaxed resize-none" />
-              <div className="absolute bottom-10 right-10 flex gap-4">
-                 <button onClick={handleAiPolish} className="px-6 py-2 bg-purple-50 text-purple-600 rounded-full text-xs font-bold">{isAiLoading ? '...' : '✨ AI Polish'}</button>
-                 <button onClick={handleCapture} className="px-6 py-2 bg-slate-100 rounded-full text-xs font-bold">✂️ Snip</button>
-                 <button onClick={() => saveToDatabase(content)} className="px-8 py-3 bg-red-600 text-white rounded-full font-bold shadow-lg disabled:bg-slate-400" disabled={isSaving}>
-                   {isSaving ? 'Securing...' : 'Publish All'}
+          <div className="max-w-5xl mx-auto space-y-8">
+            <div className="bg-white/5 backdrop-blur-2xl shadow-2xl rounded-[48px] p-16 min-h-[600px] relative border border-white/10">
+              <textarea 
+                ref={textareaRef}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Type your legacy..."
+                className="w-full h-[400px] bg-transparent outline-none text-2xl font-serif leading-relaxed resize-none text-white placeholder:text-slate-700"
+              />
+              <div className="absolute bottom-12 right-12 flex items-center gap-6">
+                 <button onClick={handleAiPolish} className="text-purple-400 text-xs font-black uppercase tracking-widest hover:text-purple-300 transition">
+                   {isAiLoading ? 'Analyzing...' : '✨ AI Polish'}
+                 </button>
+                 <button onClick={handleCapture} className="text-slate-400 text-xs font-black uppercase tracking-widest hover:text-white transition">✂️ Snip</button>
+                 <button onClick={() => saveToDatabase(content)} className="px-10 py-4 bg-red-600 text-white rounded-full font-black shadow-2xl shadow-red-900/40 hover:scale-105 active:scale-95 transition-all">
+                   {isSaving ? 'Securing...' : 'Publish to Vault'}
                  </button>
               </div>
             </div>
@@ -145,30 +143,31 @@ export default function SnippetsHub() {
         )}
 
         {view === 'profile' && (
-          <div className="max-w-3xl mx-auto pt-10">
-            <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 p-16 text-center relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-2 bg-red-600" />
-              <div className="w-24 h-24 bg-slate-50 rounded-full mx-auto mb-6 flex items-center justify-center text-3xl">👤</div>
-              <h2 className="uppercase tracking-[0.2em] text-[10px] font-black text-red-600 mb-6">Elite Student Editor</h2>
-              <p className="mb-10 text-slate-500">{user?.email || 'Guest'}</p>
-              <div className="grid grid-cols-3 gap-8 border-t pt-10">
-                <div><div className="text-2xl font-bold">12</div><div className="text-[10px] uppercase text-slate-400 font-bold">Reviews</div></div>
-                <div><div className="text-2xl font-bold">4.9</div><div className="text-[10px] uppercase text-slate-400 font-bold">Rating</div></div>
-                <div><div className="text-2xl font-bold">{snippets.length + 150}</div><div className="text-[10px] uppercase text-slate-400 font-black">Points</div></div>
+          <div className="max-w-2xl mx-auto pt-10 text-center">
+            <div className="bg-gradient-to-b from-white/10 to-transparent backdrop-blur-md rounded-[48px] border border-white/10 p-20">
+              <div className="w-24 h-24 bg-red-600 rounded-3xl mx-auto mb-8 flex items-center justify-center text-3xl shadow-2xl shadow-red-600/20 rotate-3">👤</div>
+              <h2 className="uppercase tracking-[0.3em] text-[12px] font-black text-red-600 mb-2">Elite Content Editor</h2>
+              <p className="text-slate-400 mb-12 font-mono text-sm">{user?.email}</p>
+              <div className="grid grid-cols-3 gap-12 border-y border-white/10 py-10">
+                <div><div className="text-3xl font-bold text-white">12</div><div className="text-[10px] uppercase text-slate-500 font-bold mt-1">Reviewers</div></div>
+                <div><div className="text-3xl font-bold text-white">4.9</div><div className="text-[10px] uppercase text-slate-500 font-bold mt-1">Rating</div></div>
+                <div><div className="text-3xl font-bold text-white">{snippets.length + 150}</div><div className="text-[10px] uppercase text-slate-500 font-bold mt-1">Trust</div></div>
               </div>
-              <button onClick={handleLogout} className="mt-12 text-red-600 font-bold text-xs uppercase tracking-widest hover:underline">Sign Out</button>
+              <button onClick={handleLogout} className="mt-12 text-slate-500 hover:text-red-600 font-bold text-xs uppercase tracking-widest transition">Terminate Session</button>
             </div>
           </div>
         )}
 
         {showAuth && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-md">
-            <div className="bg-white p-12 rounded-[40px] shadow-2xl w-full max-w-md text-center">
-              <h2 className="text-3xl font-serif font-bold mb-4">Secure Access</h2>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="w-full p-4 mb-4 bg-slate-50 border rounded-2xl" />
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="w-full p-4 mb-6 bg-slate-50 border rounded-2xl" />
-              <button onClick={handleLogin} className="w-full py-4 bg-red-600 text-white rounded-2xl font-bold">Enter Hub</button>
-              <button onClick={() => setShowAuth(false)} className="mt-4 text-slate-400 text-sm">Cancel</button>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-xl">
+            <div className="bg-[#1e293b] p-16 rounded-[48px] shadow-3xl w-full max-w-md border border-white/10 text-center">
+              <h2 className="text-4xl font-serif font-bold mb-8 text-white">Vault Access</h2>
+              <div className="space-y-4 mb-8">
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="w-full p-5 bg-black/20 border border-white/5 rounded-2xl text-white outline-none focus:border-red-600 transition" />
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="w-full p-5 bg-black/20 border border-white/5 rounded-2xl text-white outline-none focus:border-red-600 transition" />
+              </div>
+              <button onClick={handleLogin} className="w-full py-5 bg-red-600 text-white rounded-2xl font-black shadow-xl shadow-red-900/20 hover:bg-red-700 transition">Unlock</button>
+              <button onClick={() => setShowAuth(false)} className="mt-6 text-slate-500 text-sm block mx-auto hover:text-white transition">Return</button>
             </div>
           </div>
         )}
